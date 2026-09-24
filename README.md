@@ -39,9 +39,15 @@
 
 الرابط كيتعاود يطبع كل 10 دقايق فـ الـ step **"Windows is running"** مع الوقت الباقي.
 
-### RDP (اختياري)
-إلا زدتي `TAILSCALE_AUTHKEY`، شعل Tailscale فـ PC ديالك ودخل بـ Remote Desktop لـ `win11-github:3389`
-(ولا الـ IP اللي كيبان فـ الـ log).
+### RDP من الهاتف بـ Tailscale (اختياري)
+1. دير حساب فـ https://tailscale.com ← **Settings ← Keys ← Generate auth key**
+   وشعل **Reusable** و **Ephemeral** ← كوبي المفتاح (`tskey-auth-...`).
+2. حطو فـ Secret سميتو `TAILSCALE_AUTHKEY`.
+3. فـ الهاتف: نزّل **Tailscale** ودخل بنفس الحساب وشعلو (Connect).
+4. نزّل **Windows App** (Microsoft Remote Desktop سابقا).
+5. شعل الـ workflow، وتسنى حتى يبان فـ الـ log ديال **"Connect Tailscale"** الـ IP (`100.x.x.x`).
+6. فـ Windows App: **+ ← Add PC** ← PC name = `100.x.x.x` (ولا `win11-github`)
+   ← User account: `Docker` + `ACCESS_PASSWORD` ← Save ← Connect.
 
 ## 3) الإطفاء والحفظ
 
