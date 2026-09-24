@@ -222,7 +222,12 @@ jobs:
           curl -fsSL https://tailscale.com/install.sh | sh
           sudo tailscale up --authkey "$TS_KEY" --hostname "win11-github" --accept-routes=false
           echo "TS_IP=$(tailscale ip -4)" >> "$GITHUB_ENV"
-          echo "RDP address: $(tailscale ip -4):3389  (or win11-github:3389)"
+          echo "=============================================================="
+          echo " RDP (Remote Desktop) via Tailscale"
+          echo " PC name / address : $(tailscale ip -4)   (or: win11-github)"
+          echo " User              : $WIN_USER"
+          echo " Password          : (your ACCESS_PASSWORD secret)"
+          echo "=============================================================="
 
       - name: Windows is running (open the link below)
         env:
@@ -265,6 +270,8 @@ jobs:
           fi
           docker logs --tail 20 windows 2>&1 || true
           docker rm -f tunnel caddy >/dev/null 2>&1 || true
+          # Remove this machine from Tailscale so the name "win11-github" is free next time
+          if command -v tailscale >/dev/null; then sudo tailscale logout || true; fi
 
       - name: Save Windows (encrypted backup → Releases)
         if: ${{ always() && steps.restore.outcome == 'success' }}
