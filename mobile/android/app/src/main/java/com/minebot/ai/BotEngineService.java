@@ -352,7 +352,12 @@ public final class BotEngineService extends Service {
     }
 
     private void stopAllBots() {
-        JSONArray states = new JSONArray(database.readAll("bot_states"));
+        JSONArray states;
+        try { states = new JSONArray(database.readAll("bot_states")); }
+        catch (Exception ignored) {
+            emit("command_result", error("تعذر قراءة حالات البوتات قبل إيقاف المحرك."));
+            states = new JSONArray();
+        }
         for (int i = 0; i < states.length(); i++) {
             JSONObject state = states.optJSONObject(i);
             if (state == null) continue;
@@ -371,7 +376,12 @@ public final class BotEngineService extends Service {
     }
 
     private void stopServiceIfIdle() {
-        JSONArray states = new JSONArray(database.readAll("bot_states"));
+        JSONArray states;
+        try { states = new JSONArray(database.readAll("bot_states")); }
+        catch (Exception ignored) {
+            emitEngineState("FAILED", "تعذر التحقق من حالة الجلسات؛ لن يتم إيقاف المحرك تلقائيًا.");
+            return;
+        }
         for (int i = 0; i < states.length(); i++) {
             JSONObject state = states.optJSONObject(i);
             if (state == null) continue;
