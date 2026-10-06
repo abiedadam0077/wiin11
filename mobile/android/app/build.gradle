@@ -1,0 +1,41 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.minebot.ai'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.minebot.ai'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '0.1.0'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    sourceSets {
+        main.assets.srcDir("$buildDir/generated/web-assets")
+    }
+}
+
+tasks.register('syncWebAssets', Sync) {
+    from(file('../../www'))
+    into("$buildDir/generated/web-assets/www")
+}
+
+tasks.named('preBuild').configure {
+    dependsOn('syncWebAssets')
+}

@@ -1,3 +1,9 @@
+# MineBot AI (Android source)
+
+أضيفت إلى المستودع نسخة مصدر أولية لتطبيق Android محلي لإدارة إعدادات Minecraft، الخوادم، ملفات البوت، خطط AI والسجلات. راجع [mobile/README.md](mobile/README.md) لمعرفة الميزات التي تعمل وحدود محرك البوت وخطوات بناء APK، أو نزّل [حزمة المصدر](mobile/MineBot-AI-source.zip). **محرك تسجيل الدخول وتنفيذ Bots غير مدمج في هذه النسخة، ولا يوجد APK مولّد من بيئة العمل الحالية.**
+
+---
+
 # wiin11 — Windows 11 Pro على GitHub Actions (مع حفظ البيانات)
 
 هاد الريبو فيه GitHub Action (`.github/workflows/windows11.yml`) كيشغّل **Windows 11 Pro حقيقي**
