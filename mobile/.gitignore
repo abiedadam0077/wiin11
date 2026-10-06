@@ -6,3 +6,5 @@ android/**/build/
 android/.idea/
 *.apk
 *.aab
+android/app/src/main/jniLibs/
+android/app/src/main/cpp/nodejs/include/

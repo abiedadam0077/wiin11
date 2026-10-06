@@ -1,0 +1,22 @@
+{
+  "name": "minebot-ai-engine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "In-process Minecraft Java bot engine for the native MineBot AI Android app",
+  "type": "commonjs",
+  "main": "main.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.cjs"
+  },
+  "dependencies": {
+    "mineflayer": "4.39.0",
+    "mineflayer-auto-eat": "5.0.3",
+    "mineflayer-pathfinder": "2.4.5"
+  },
+  "overrides": {
+    "uuid": "11.1.1"
+  }
+}

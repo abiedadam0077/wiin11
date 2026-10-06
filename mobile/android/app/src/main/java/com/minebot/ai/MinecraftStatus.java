@@ -10,7 +10,6 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
-import java.util.Iterator;
 
 /** Real Minecraft Java Server List Ping (handshake status state); this is not a bot login. */
 final class MinecraftStatus {

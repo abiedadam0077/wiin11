@@ -1,68 +1,59 @@
-# MineBot AI — Android source
+# MineBot AI — Native Android
 
-واجهة عربية RTL مستوحاة مباشرة من مرجع التصميم المرفق: Dark UI، بطاقات زجاجية، توهجات بنفسجية/زرقاء، أزرار متدرجة وتنقل سفلي ثابت. التطبيق يبدأ ببيانات فارغة ولا ينشئ Bots أو Servers أو نشاطًا تجريبيًا.
+التطبيق الأصلي يستخدم Android Views/Activities وواجهات Android النظامية فقط. لا يحتوي APK على WebView أو صفحة HTML أو واجهة JavaScript. واجهة عربية RTL داكنة ببطاقات بنفسجية/زرقاء، وتُنشئ بياناتها محليًا بدل إظهار Bots أو اتصال أو Telemetry تجريبية.
 
-## ما يعمل في هذا الإصدار
+## البنية الحالية
 
-- واجهة Dashboard وإدارة محلية للسيرفرات وملفات البوت والمهام والإعدادات والسجلات والـSkins.
-- CRUD للسيرفرات والبوتات والمهام، مع تأكيد الحذف وسجل تغييرات محلي.
-- **اختبار Server Status Ping حقيقي** لـMinecraft Java Edition عبر TCP: الإصدار، عدد اللاعبين والـMOTD. الاختبار لا يساوي تسجيل دخول Bot.
-- Android WebView محلي، وSQLite عبر `SQLiteOpenHelper` لجداول servers/bots/tasks/task history/settings/AI config/skins/locations/logs/bot states.
-- مفتاح OpenRouter يُشفّر بـAES-GCM ومفتاح محفوظ في Android Keystore. طلبات OpenRouter تُنفّذ من طبقة Android دون إعادة المفتاح إلى JavaScript. المعاينة المحلية تستخدم SQLite عبر Node، لكن مفتاحها يبقى في ذاكرة عملية الخادم فقط ولا يُكتب إلى القرص.
-- جلب النماذج الفعلية من OpenRouter، ترتيب المتاح المجاني حسب السياق ودعم الأدوات/الاستدلال وسجل الاعتمادية، وخطة مهمة بصيغة منظّمة مع محاولة نماذج مجانية بديلة عند الفشل.
-- حفظ وصف المهمة والخطة والسجل محليًا. من دون محرك Minecraft لا تتحول المهمة إلى Running/Completed ولا يُدّعى أنها نُفذت.
-- رفع PNG Skin حقيقي بأبعاد Minecraft `64×64` أو `64×32` إلى مساحة التطبيق الخاصة، مع اختيار السكن في ملف البوت.
-- نسخ احتياطي محلي واستيراد/دمج، إعدادات، فلترة Logs وقفل PIN محلي.
-- سياسة `Behavior Engine` منفصلة ومختبرة؛ ترتيب الأولوية ظاهر للمستخدم، لكن لا توجد حالة عالم حيّ لتغذيتها.
+- **التطبيق:** Java Native Android، `com.minebot.ai`، version `0.1.0` / versionCode `1`، `minSdk 26`، `targetSdk 35`، `compileSdk 35`.
+- **محرك Minecraft:** Node.js Mobile Android `24.20.0-0` عبر JNI، Mineflayer `4.39.0`، `mineflayer-pathfinder 2.4.5`، `mineflayer-auto-eat 5.0.3`. يعتمد الاتصال الحقيقي على Minecraft Java protocol عبر Mineflayer.
+- **الإصدارات:** يقبل حقل الاتصال `auto` أو `1.8` حتى `1.21.x` (بصيغة patch حتى رقمين). هذا حدّ التحقق في الواجهة، وليس ضمانًا بأن كل إصدار/Proxy/Plugin يعمل؛ لم تُجرَ بعد مصادقة حيّة على مصفوفة الإصدارات.
+- **التخزين:** SQLite عبر `SQLiteOpenHelper` لجداول servers/bots/tasks/task history/settings/AI config/skins/locations/logs/bot states. المفتاح OpenRouter مشفّر AES-GCM ومفتاح التشفير محفوظ في Android Keystore. ملفات Microsoft auth المؤقتة تبقى داخل app-private cache وتُحذف عند إيقاف المحرك؛ لا تُكتب في المستودع أو السجلات.
+- **الخلفية:** خدمة foreground من نوع `connectedDevice` مع إشعار، `WAKE_LOCK` محدود بست ساعات، وإعادة اتصال بتأخير متزايد. Android/OEM ما يزال قادرًا على قتل الخدمة أو تقييد الشبكة؛ راقب إشعار النظام وسياسات البطارية.
+- **الذكاء الاصطناعي:** اتصال مباشر إلى OpenRouter عبر HTTPS بعد أن يضيف المستخدم مفتاحه. يجلب التطبيق النماذج المجانية، يتيح اختيارها، ويحاول حتى أربعة بدائل إذا فشل النموذج المحدد. مخرجات AI محصورة في اقتراح `collect` واحد أو `unsupported`. لا يملك AI واجهة أو قناة لإرسال أوامر Minecraft؛ موافقة المستخدم تحفظ المهمة `pending`، ثم يتحقق Task Engine ومحرك Mineflayer من الاتصال والكتلة ومخزون العالم.
 
-## حدود يجب عدم إخفائها
+## الوظائف الموصولة فعليًا
 
-**محرك تسجيل دخول وتشغيل Bots غير مدمج.** لا توجد مصادقة Microsoft ولا إرسال حزم Play للحركة أو الملاحة أو Pathfinding أو التعدين أو البناء أو المخزون/الأكل/القتال/التعافي من الموت. أزرار تشغيل Bot تشرح هذا القيد ولا تغيّر الحالة إلى Online. كذلك خطة AI اقتراح وليست Task تنفذ داخل Minecraft. لا تُدخل كلمة مرور Microsoft؛ التطبيق لا يطلبها ولا يخزّنها.
+- إضافة وتعديل وحذف سجل سيرفر Java وبوت محلي، واختيار Offline أو تدفق Microsoft device-code (لا تُطلب كلمة مرور Microsoft).
+- Minecraft Server List Status Ping عبر TCP؛ يعرض نسخة/لاعبين/وصفًا عند نجاحه، لكنه **ليس تسجيل دخول**.
+- إنشاء جلسة Mineflayer، أحداث تسجيل الدخول وSpawn والحالة الحقيقية، ومخزون/صحة/طعام/موقع مرصود. واجهة ONLINE تتطلب لقطة Spawn حديثة؛ السجل القديم يظهر غير متحقق.
+- أوامر حركة قصيرة، Chat، إيقاف الحركة، Disconnect، وإعادة الاتصال؛ تُرسل إلى جلسة Mineflayer فقط.
+- مهمة جمع كتل محدودة: الحركة عبر Pathfinder ثم dig وانتظار فرق حقيقي في المخزون قبل التقدم. حالات المهمة تُحفظ في SQLite، مع Pause/Resume/Cancel. Behavior Engine يوقف المهمة عند انقطاع الاتصال أو أولوية الطعام/الصحة.
+- إدارة PNG Skins محليًا والتحقق من الأبعاد `64×64` أو `64×32`. **لا يرفع التطبيق Skin إلى حساب Microsoft أو يغيّر Skin السيرفر.**
+- إشعار خدمة أمامية، سجل أحداث، نسخة احتياطية JSON محلية، وإعدادات AI.
 
-اختبار Ping متاح فقط لسيرفر Java يمكن الوصول إليه من الهاتف. لا يوجد دعم Bedrock أو SRV record أو اختبار تسجيل دخول. قائمة الـSkins تحفظ صورة Texture محليًا؛ تعيينها إلى Bot يحفظ الإعداد محليًا ولا يغيّر حسابًا على السيرفر.
+## حدود معروفة — لا تُخفَ
 
-## المعاينة المحلية
+- لا يوجد تحقق حي حتى الآن من بناء/تشغيل Node داخل APK أو اتصال Minecraft خارجي أو Microsoft OAuth؛ الاختبارات الحالية تختبر منطق المحرك مع Mineflayer mock وبروتوكول Status Ping محلي فقط.
+- لم يُنتج APK في هذه البيئة بعد. لا يوجد هنا JDK/Gradle/Android SDK/NDK مثبت، لذلك لم تُشغّل اختبارات Robolectric أو `assembleDebug`/`assembleRelease`.
+- المهام المدعومة حاليًا جمع كتلة لها عنصر مطابق في المخزون ضمن العالم المحمّل. التخزين بالصناديق، Crafting، البناء، القتال، follow/goto من الواجهة، وAI لتنفيذ خطة عامة متعددة الخطوات غير جاهزة.
+- تسجيل Microsoft يعتمد SDK/المكتبات التابعة لـMineflayer، ويتطلب خادم Java يسمح بحساب Online؛ Offline لا يعمل إلا على سيرفر يسمح بذلك. لا يوجد دعم Bedrock/SRV أو تسجيل دخول غير رسمي.
+- ملفات auth المؤقتة في دليل التطبيق الخاص، لكنها ليست تشفيرًا مخصصًا بـKeystore أثناء تشغيل Mineflayer. مفتاح OpenRouter وحده يُخزن بتشفير Keystore.
+- لا تتضمن النسخة إعداد توقيع Play Store. نسخة Release في CI تستخدم debug certificate لغرض الاختبار فقط وليست إصدار إنتاج.
 
-تتطلب Node.js 22 أو أحدث. من مجلد `mobile`:
-
-```bash
-npm ci
-npm run build:web
-npm test
-npm start
-```
-
-افتح `http://localhost:4173` محليًا (أو منفذ المعاينة الذي تشغّله البيئة). خادم المعاينة يستمع على `0.0.0.0` ويخزن SQLite والملفات تحت `mobile/.data/`، وهو مجلد مستثنى من Git. مفتاح OpenRouter في وضع المعاينة مؤقت في ذاكرة العملية فقط؛ بعد إعادة تشغيل الخادم أعد إدخاله. لا تستخدم وضع المعاينة لتخزين مفتاح حساس على جهاز مشترك.
-
-## بناء APK من المصدر
-
-المشروع مضبوط على:
-
-- **App name:** MineBot AI
-- **Version:** 0.1.0 (versionCode 1)
-- **Build type:** Debug
-- **Target SDK:** 35
-- **Minimum SDK:** 26
-
-يلزم JDK 17، Android SDK Platform 35 وAndroid Build Tools، وGradle 8.7 متوافق مع Android Gradle Plugin 8.6.1. بعد تثبيت الأدوات واتصال Gradle بمستودعات Google/Maven:
+## اختبارات المحرك
 
 ```bash
-cd mobile
-npm ci
-npm run build:web
-cd android
-gradle :app:assembleDebug
+npm ci --prefix mobile/engine
+npm --prefix mobile/engine test
+node --check mobile/engine/main.js
 ```
 
-الناتج المتوقع: `mobile/android/app/build/outputs/apk/debug/app-debug.apk`.
+الاختبارات تغطي التحقق من إعداد الاتصال وتنقيح الأسرار، أحداث CONNECTING/JOINING/Spawn، لقطة الحالة، أوامر التحكم، زيادة المخزون قبل التقدم، Pause/Resume/Cancel، Behavior للأكل، وعزل أحداث الجلسات القديمة. لا تساوي هذه الاختبارات خادم Minecraft حيًا.
 
-لم يُنتج APK داخل بيئة التطوير الحالية: هذه الحاوية لا تحتوي Java/Javac أو Gradle أو Android SDK/ADB، واتصالات تنزيل Android/Google Maven غير متاحة فيها. لم أضع ملف APK وهميًا أو رابط تحميل غير موجود. يلزم تشغيل الخطوات السابقة على Android Studio/CI مجهز للتحقق من حزمة APK وتثبيتها.
+## بناء APK
 
-## الاختبارات
+يحتاج JDK 17 وAndroid SDK Platform/Build Tools 35 وNDK `27.2.12479018` وCMake `3.22.1` وGradle `8.7` (AGP `8.6.1`). يحمّل workflow حزمة Node.js Mobile مثبتة الإصدار، ويتحقق من SHA-256، ثم ينسخ المكتبة للرابط JNI ويبني Native APK.
 
 ```bash
-cd mobile
-npm test
+npm ci --prefix mobile/engine
+cd mobile/android
+gradle :app:testDebugUnitTest
+gradle :app:assembleDebug :app:assembleRelease
 ```
 
-الاختبارات الحالية تغطي CRUD في SQLite، REST المحلي، حزمة Minecraft status ping على TCP، التحقق من العناوين، رفع PNG/النسخ المحلية، ترشيح النماذج، ترتيب Behavior Engine ومنع Task Engine من ادعاء التنفيذ من دون محرك. اختبارات OpenRouter الحية وتثبيت APK/اختبارات Android runtime تحتاج مفتاحًا يقدمه المستخدم وجهاز Android؛ لم تُنفذ في بيئة البناء هذه.
+المخرجات المتوقعة:
+
+- `mobile/android/app/build/outputs/apk/debug/app-debug.apk`
+- `mobile/android/app/build/outputs/apk/release/app-release.apk` (موقّع بمفتاح debug في CI للاختبار فقط)
+
+Build metadata: application ID `com.minebot.ai`; version `0.1.0` (`versionCode 1`); target/compile SDK `35`; minimum SDK `26`; ABIs `arm64-v8a` و`x86_64`.

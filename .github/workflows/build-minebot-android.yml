@@ -1,4 +1,4 @@
-name: Build MineBot AI APK
+name: Build Native MineBot AI Android APK
 
 on:
   workflow_dispatch:
@@ -14,9 +14,9 @@ permissions:
 
 jobs:
   debug-apk:
-    name: Assemble debug APK
+    name: Test and assemble Android APKs
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 45
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -32,7 +32,7 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: mobile/package-lock.json
+          cache-dependency-path: mobile/engine/package-lock.json
 
       - name: Locate preinstalled Android SDK
         shell: bash
@@ -50,25 +50,49 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | sdkmanager --licenses >/dev/null || true
 
-      - name: Install SDK 35
-        run: sdkmanager 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Install Android SDK and native build tools
+        run: sdkmanager 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.2.12479018' 'cmake;3.22.1'
 
-      - name: Install web build dependencies
-        run: npm ci --prefix mobile
+      - name: Fetch pinned Node.js 24 Android runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime_zip="$RUNNER_TEMP/nodejs-mobile-android-24.20.0-0.zip"
+          runtime_root="$RUNNER_TEMP/nodejs-mobile-android"
+          curl --fail --location --retry 3 --retry-all-errors --silent --show-error \
+            'https://github.com/digidem/nodejs-mobile/releases/download/v24.20.0-0/nodejs-mobile-android-24.20.0-0.zip' \
+            --output "$runtime_zip"
+          echo 'f5ffbaf4f2679fa9180b0758c637c2f8fc8828300f95129badf213a028fb37bb  '"$runtime_zip" | sha256sum --check --status
+          mkdir -p "$runtime_root"
+          unzip -q "$runtime_zip" -d "$runtime_root"
+          node_header="$(find "$runtime_root" -type f -path '*/include/node/node.h' -print -quit)"
+          test -n "$node_header"
+          header_root="${node_header%/node/node.h}"
+          mkdir -p mobile/android/app/src/main/cpp/nodejs/include
+          cp -a "$header_root/node" mobile/android/app/src/main/cpp/nodejs/include/
+          for abi in arm64-v8a x86_64; do
+            node_library="$(find "$runtime_root" -type f -path "*/bin/$abi/libnode.so" -print -quit)"
+            test -n "$node_library"
+            mkdir -p "mobile/android/app/src/main/jniLibs/$abi"
+            cp "$node_library" "mobile/android/app/src/main/jniLibs/$abi/libnode.so"
+          done
 
-      - name: Build web assets
-        run: npm --prefix mobile run build:web
+      - name: Install Minecraft engine dependencies
+        run: npm ci --prefix mobile/engine
+
+      - name: Test Minecraft engine logic
+        run: npm --prefix mobile/engine test
 
       - name: Set up Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      - name: Assemble APK
+      - name: Test native Android and assemble APKs
         shell: bash
         run: |
           set +e
-          gradle --no-daemon --console=plain --stacktrace -p mobile/android :app:assembleDebug > "$RUNNER_TEMP/gradle-build.log" 2>&1
+          gradle --no-daemon --console=plain --stacktrace -p mobile/android :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease > "$RUNNER_TEMP/gradle-build.log" 2>&1
           result=$?
           cat "$RUNNER_TEMP/gradle-build.log"
           if [[ $result -ne 0 ]]; then
@@ -97,23 +121,26 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-      - name: Upload debug APK
+      - name: Upload Android APKs
         uses: actions/upload-artifact@v4
         with:
-          name: minebot-ai-debug-apk
-          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          name: minebot-ai-android-apks
+          path: |
+            mobile/android/app/build/outputs/apk/debug/app-debug.apk
+            mobile/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
 
-      - name: Publish downloadable debug APK
+      - name: Publish downloadable Android APKs
         env:
           GH_TOKEN: ${{ github.token }}
-          APK_PATH: mobile/android/app/build/outputs/apk/debug/app-debug.apk
-          RELEASE_TAG: minebot-ai-debug-build-${{ github.run_number }}
+          DEBUG_APK: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          RELEASE_APK: mobile/android/app/build/outputs/apk/release/app-release.apk
+          RELEASE_TAG: minebot-ai-native-build-${{ github.run_number }}
         run: |
-          gh release create "$RELEASE_TAG" "$APK_PATH" \
+          gh release create "$RELEASE_TAG" "$RELEASE_APK" "$DEBUG_APK" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "MineBot AI 0.1.0 Debug APK #${GITHUB_RUN_NUMBER}" \
-            --notes "Automated debug APK build for commit ${GITHUB_SHA}. This is an installable debug-signed APK; it is not a Play Store release." \
+            --title "MineBot AI 0.1.0 Native Android APK #${GITHUB_RUN_NUMBER}" \
+            --notes "Native Android build for commit ${GITHUB_SHA}. The Release APK is signed with the CI debug certificate for testing and is not a production or Play Store signature. Minecraft external-server login and device runtime still require separate verification." \
             --prerelease

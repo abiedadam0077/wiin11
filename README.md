@@ -1,6 +1,6 @@
-# MineBot AI (Android source)
+# MineBot AI — Native Android
 
-أضيفت إلى المستودع نسخة مصدر أولية لتطبيق Android محلي لإدارة إعدادات Minecraft، الخوادم، ملفات البوت، خطط AI والسجلات. راجع [mobile/README.md](mobile/README.md) لمعرفة الميزات التي تعمل وحدود محرك البوت وخطوات بناء APK، أو نزّل [حزمة المصدر](mobile/MineBot-AI-source.zip). **محرك تسجيل الدخول وتنفيذ Bots غير مدمج في هذه النسخة، ولا يوجد APK مولّد من بيئة العمل الحالية.**
+مصدر تطبيق Android أصلي بواجهة Java/Views، خدمة foreground، SQLite، Android Keystore، ومحرك Mineflayer مضمن عبر Node.js Mobile/JNI. لا توجد واجهة WebView أو PWA ضمن تطبيق Android. راجع [mobile/README.md](mobile/README.md) للبنية، الوظائف والحدود وخطوات البناء. **لا يوجد APK موثّق في مساحة العمل حتى الآن؛ ولم يُختبر بعد تشغيل المحرك داخل جهاز/محاكي أو تسجيل دخول Minecraft حي.**
 
 ---
 

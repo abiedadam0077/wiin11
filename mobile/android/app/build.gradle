@@ -12,6 +12,13 @@ android {
         targetSdk 35
         versionCode 1
         versionName '0.1.0'
+        externalNativeBuild {
+            cmake {
+                cppFlags '-std=c++17 -fexceptions -frtti'
+                arguments '-DANDROID_STL=c++_shared'
+                abiFilters 'arm64-v8a', 'x86_64'
+            }
+        }
     }
 
     buildFeatures {
@@ -20,8 +27,17 @@ android {
 
     buildTypes {
         release {
+            // CI-only installable artifact. This debug certificate is not suitable for Play Store or production.
+            signingConfig signingConfigs.debug
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path file('src/main/cpp/CMakeLists.txt')
+            version '3.22.1'
         }
     }
 
@@ -30,16 +46,33 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 
+    testOptions {
+        unitTests.includeAndroidResources = true
+    }
+
     sourceSets {
-        main.assets.srcDir("$buildDir/generated/web-assets")
+        main.assets.srcDir("$buildDir/generated/node-assets")
     }
 }
 
-tasks.register('syncWebAssets', Sync) {
-    from(file('../../www'))
-    into("$buildDir/generated/web-assets/www")
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.14.1'
+}
+
+tasks.register('syncNodeProject', Sync) {
+    from(file('../../engine')) {
+        include 'main.js', 'bot-manager.js', 'behavior-engine.js', 'package.json'
+        into 'nodejs-project'
+    }
+    from(file('../../engine/node_modules')) {
+        include '**/*'
+        exclude '**/.bin/**', '**/test/**', '**/tests/**', '**/example/**', '**/examples/**', '**/doc/**', '**/docs/**', '**/.github/**'
+        into 'nodejs-project/node_modules'
+    }
+    into "$buildDir/generated/node-assets"
 }
 
 tasks.named('preBuild').configure {
-    dependsOn('syncWebAssets')
+    dependsOn('syncNodeProject')
 }
