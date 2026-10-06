@@ -23,8 +23,8 @@
 
 ## حدود معروفة — لا تُخفَ
 
-- لا يوجد تحقق حي حتى الآن من بناء/تشغيل Node داخل APK أو اتصال Minecraft خارجي أو Microsoft OAuth؛ الاختبارات الحالية تختبر منطق المحرك مع Mineflayer mock وبروتوكول Status Ping محلي فقط.
-- لم يُنتج APK في هذه البيئة بعد. لا يوجد هنا JDK/Gradle/Android SDK/NDK مثبت، لذلك لم تُشغّل اختبارات Robolectric أو `assembleDebug`/`assembleRelease`.
+- نجح CI في 2026-10-06 في تشغيل Node tests وRobolectric ثم بناء APK debug وrelease مع JNI/CMake (run [37541446115](https://github.com/abiedadam0077/wiin11/actions/runs/37541446115)); ونُشرت الملفات في [الإصدار native #12](https://github.com/abiedadam0077/wiin11/releases/tag/minebot-ai-native-build-12). هذا يثبت البناء فقط، لا تشغيل `libnode` على جهاز حقيقي ولا اتصال Minecraft خارجي أو Microsoft OAuth.
+- لم يُختبر APK بعد على جهاز أو محاكي Android، ولم تُجرَ مصادقة/Join/Spawn حية لخادم Minecraft. اختبارات Mineflayer محاكاة بروتوكول/جلسة؛ واختبار Status Ping يستخدم خادمًا محليًا ولا يساوي تسجيل الدخول.
 - المهام المدعومة حاليًا جمع كتلة لها عنصر مطابق في المخزون ضمن العالم المحمّل. التخزين بالصناديق، Crafting، البناء، القتال، follow/goto من الواجهة، وAI لتنفيذ خطة عامة متعددة الخطوات غير جاهزة.
 - تسجيل Microsoft يعتمد SDK/المكتبات التابعة لـMineflayer، ويتطلب خادم Java يسمح بحساب Online؛ Offline لا يعمل إلا على سيرفر يسمح بذلك. لا يوجد دعم Bedrock/SRV أو تسجيل دخول غير رسمي.
 - ملفات auth المؤقتة في دليل التطبيق الخاص، لكنها ليست تشفيرًا مخصصًا بـKeystore أثناء تشغيل Mineflayer. مفتاح OpenRouter وحده يُخزن بتشفير Keystore.
@@ -38,7 +38,7 @@ npm --prefix mobile/engine test
 node --check mobile/engine/main.js
 ```
 
-الاختبارات تغطي التحقق من إعداد الاتصال وتنقيح الأسرار، أحداث CONNECTING/JOINING/Spawn، لقطة الحالة، أوامر التحكم، زيادة المخزون قبل التقدم، Pause/Resume/Cancel، Behavior للأكل، وعزل أحداث الجلسات القديمة. لا تساوي هذه الاختبارات خادم Minecraft حيًا.
+الاختبارات تغطي التحقق من إعداد الاتصال وتنقيح الأسرار، أحداث CONNECTING/JOINING/Spawn، لقطة الحالة، أوامر التحكم، زيادة المخزون قبل التقدم، Pause/Resume/Cancel، Behavior للأكل، وعزل أحداث الجلسات القديمة. لا تساوي هذه الاختبارات خادم Minecraft حيًا. في CI شُغّلت أيضًا 6 اختبارات Android/Robolectric تغطي SQLite، شاشة Native، تقييد مخرجات AI، وStatus Ping محلي.
 
 ## بناء APK
 
@@ -57,3 +57,5 @@ gradle :app:assembleDebug :app:assembleRelease
 - `mobile/android/app/build/outputs/apk/release/app-release.apk` (موقّع بمفتاح debug في CI للاختبار فقط)
 
 Build metadata: application ID `com.minebot.ai`; version `0.1.0` (`versionCode 1`); target/compile SDK `35`; minimum SDK `26`; ABIs `arm64-v8a` و`x86_64`.
+
+آخر APK منشور: [app-release.apk](https://github.com/abiedadam0077/wiin11/releases/download/minebot-ai-native-build-12/app-release.apk) (167,412,208 بايت، SHA-256 `8bc6411084bffe5ae4e4ac633e31f5fd254785a5f4affa481c8bbf6dbf749d4e`). إنه Release variant موقّع بشهادة debug للاختبار، وليس توقيع إنتاج أو Play Store.

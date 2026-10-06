@@ -1,6 +1,6 @@
 # MineBot AI — Native Android
 
-مصدر تطبيق Android أصلي بواجهة Java/Views، خدمة foreground، SQLite، Android Keystore، ومحرك Mineflayer مضمن عبر Node.js Mobile/JNI. لا توجد واجهة WebView أو PWA ضمن تطبيق Android. راجع [mobile/README.md](mobile/README.md) للبنية، الوظائف والحدود وخطوات البناء. **لا يوجد APK موثّق في مساحة العمل حتى الآن؛ ولم يُختبر بعد تشغيل المحرك داخل جهاز/محاكي أو تسجيل دخول Minecraft حي.**
+مصدر تطبيق Android أصلي بواجهة Java/Views، خدمة foreground، SQLite، Android Keystore، ومحرك Mineflayer مضمن عبر Node.js Mobile/JNI. لا توجد واجهة WebView أو PWA ضمن تطبيق Android. بُنيت نسختا APK للاختبار بنجاح في [GitHub Actions](https://github.com/abiedadam0077/wiin11/actions/runs/37541446115) ونُشرتا في [إصدار MineBot AI native #12](https://github.com/abiedadam0077/wiin11/releases/tag/minebot-ai-native-build-12)؛ توقيع APK release تجريبي بمفتاح debug وليس توقيع إنتاج. لم يُختبر بعد تشغيل المحرك على جهاز/محاكي أو تسجيل دخول إلى خادم Minecraft حي. راجع [mobile/README.md](mobile/README.md) للبنية، الوظائف والحدود وخطوات البناء.
 
 ---
 
