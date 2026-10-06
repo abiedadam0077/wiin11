@@ -17,7 +17,7 @@ import javax.crypto.SecretKey;
 import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.PBEKeySpec;
-import javax.crypto.SecretKeySpec;
+import javax.crypto.spec.SecretKeySpec;
 
 /** Device-local secret handling: AES-GCM key material remains in Android Keystore. */
 final class SecureStore {
