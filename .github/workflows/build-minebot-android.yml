@@ -65,7 +65,32 @@ jobs:
           gradle-version: '8.7'
 
       - name: Assemble APK
-        run: gradle --no-daemon -p mobile/android :app:assembleDebug
+        shell: bash
+        run: |
+          set +e
+          gradle --no-daemon --console=plain --stacktrace -p mobile/android :app:assembleDebug > "$RUNNER_TEMP/gradle-build.log" 2>&1
+          result=$?
+          cat "$RUNNER_TEMP/gradle-build.log"
+          if [[ $result -ne 0 ]]; then
+            {
+              echo '### Gradle build failure details'
+              echo '```text'
+              tail -n 80 "$RUNNER_TEMP/gradle-build.log"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            details="$(tail -n 20 "$RUNNER_TEMP/gradle-build.log" | tr '\n' ' ' | cut -c1-5000)"
+            echo "::error title=Gradle build failure details::$details"
+          fi
+          exit "$result"
+
+      - name: Upload Gradle diagnostic log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: minebot-ai-gradle-diagnostic
+          path: ${{ runner.temp }}/gradle-build.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
