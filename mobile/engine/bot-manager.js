@@ -3,6 +3,8 @@
 const { EventEmitter } = require('node:events');
 const { Vec3 } = require('vec3');
 const { BehaviorEngine } = require('./behavior-engine');
+const { TaskEngine } = require('./task-engine');
+const { ToolRegistry } = require('./tool-registry');
 
 const CONTROL_STATES = new Set(['forward', 'back', 'left', 'right', 'jump', 'sneak', 'sprint']);
 const AUTH_MODES = new Set(['offline', 'microsoft']);
@@ -21,9 +23,9 @@ function validateBotConfig(input) {
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new TypeError('منفذ السيرفر يجب أن يكون بين 1 و65535.');
   if (!AUTH_MODES.has(auth)) throw new TypeError('طريقة المصادقة يجب أن تكون offline أو microsoft.');
   if (auth === 'offline' && !/^[A-Za-z0-9_]{3,16}$/.test(username)) throw new TypeError('اسم مستخدم Offline يجب أن يكون من 3 إلى 16 حرفًا أو رقمًا أو _.');
-  if (auth === 'microsoft' && (!username || username.length > 254 || /\\s/.test(username))) throw new TypeError('أدخل معرّف حساب Microsoft دون مسافات؛ لن نطلب كلمة المرور.');
+  if (auth === 'microsoft' && (!username || username.length > 254 || /\s/.test(username))) throw new TypeError('أدخل معرّف حساب Microsoft دون مسافات؛ لن نطلب كلمة المرور.');
   if (!VERSION_PATTERN.test(version)) throw new TypeError('الإصدار يجب أن يكون auto أو إصدار Minecraft Java صالحًا.');
-  return { host, port, username, version: version === 'auto' ? false : version, auth };
+  return { host, port, username, version: version === 'auto' ? false : version, auth, reconnect: input.reconnect !== false, autoEat: input.autoEat !== false, autoRespawn: input.autoRespawn === true };
 }
 
 function safeError(error) {
@@ -41,19 +43,26 @@ function finitePosition(position) {
 }
 
 class BotManager extends EventEmitter {
-  constructor({ mineflayer, pathfinder, minecraftData, authCacheDir, autoEat }) {
+  constructor({ mineflayer, pathfinder, minecraftData, authCacheDir, autoEat, collectBlock }) {
     super();
     this.mineflayer = mineflayer;
     this.pathfinder = pathfinder;
     this.minecraftData = minecraftData;
     this.authCacheDir = authCacheDir;
     this.autoEat = autoEat;
+    this.collectBlock = collectBlock;
     this.bots = new Map();
+    this.taskEngine = new TaskEngine(this);
+    this.tools = new ToolRegistry(this.taskEngine);
     this.behavior = new BehaviorEngine(this);
   }
 
   emitEvent(type, botId, data = {}) {
     this.emit('event', { type, botId, at: Date.now(), ...data });
+  }
+
+  safeError(error) {
+    return safeError(error);
   }
 
   async connect(botId, rawConfig) {
@@ -71,7 +80,8 @@ class BotManager extends EventEmitter {
       lastError: '',
       task: null,
       pauseReason: '',
-      reconnectEnabled: rawConfig.reconnect !== false,
+      reconnectEnabled: config.reconnect,
+      spawnedAt: 0,
       reconnectAttempt: 0,
       reconnectTimer: null,
       userStopped: false,
@@ -85,10 +95,14 @@ class BotManager extends EventEmitter {
 
   startSession(state) {
     const botId = state.id;
-    state.status = 'CONNECTING';
+    state.status = state.config.auth === 'microsoft' ? 'AUTHENTICATING' : 'CONNECTING';
     state.permanentKick = false;
+    state.spawnedAt = 0;
     const generation = ++state.sessionGeneration;
-    this.emitEvent('bot_state', botId, { status: 'CONNECTING', detail: 'بدء اتصال Minecraft الحقيقي.' });
+    this.emitEvent('bot_state', botId, {
+      status: state.status,
+      detail: state.config.auth === 'microsoft' ? 'بدء مصادقة Microsoft الرسمية.' : 'بدء اتصال Minecraft الحقيقي.',
+    });
     try {
       const options = {
         host: state.config.host,
@@ -101,6 +115,8 @@ class BotManager extends EventEmitter {
         skipValidation: false,
         onMsaCode: (data) => {
           if (generation !== state.sessionGeneration) return;
+          state.status = 'AUTHENTICATING';
+          this.emitEvent('bot_state', botId, { status: 'AUTHENTICATING', detail: 'أدخل رمز الجهاز في صفحة Microsoft الرسمية.' });
           this.emitEvent('auth_code', botId, {
             verificationUri: String(data?.verification_uri || ''),
             userCode: String(data?.user_code || ''),
@@ -114,6 +130,7 @@ class BotManager extends EventEmitter {
       state.bot = bot;
       bot.loadPlugin(this.pathfinder.pathfinder);
       if (this.autoEat) bot.loadPlugin(this.autoEat);
+      if (this.collectBlock) bot.loadPlugin(this.collectBlock);
       this.attach(botId, state, generation);
       return { accepted: true, status: state.status };
     } catch (error) {
@@ -132,11 +149,12 @@ class BotManager extends EventEmitter {
     bot.on('login', () => {
       if (!isCurrentSession()) return;
       state.status = 'JOINING';
-      this.emitEvent('bot_state', botId, { status: 'JOINING', detail: 'تم تسجيل الدخول بالبروتوكول؛ انتظار دخول العالم.' });
+      this.emitEvent('bot_state', botId, { status: 'JOINING', detail: 'قبل Minecraft جلسة Login؛ ننتظر حزمة Spawn قبل تأكيد الدخول إلى العالم.' });
     });
     bot.once('spawn', () => {
       if (!isCurrentSession()) return;
       state.status = 'ONLINE';
+      state.spawnedAt = Date.now();
       if (state.pauseReason === 'disconnected' && !state.task) state.pauseReason = '';
       if (state.stableTimer) clearTimeout(state.stableTimer);
       state.stableTimer = setTimeout(() => {
@@ -151,13 +169,13 @@ class BotManager extends EventEmitter {
       movements.entityCost = 2;
       movements.allowFreeMotion = false;
       bot.pathfinder.setMovements(movements);
-      if (bot.autoEat?.setOpts && typeof bot.autoEat.enableAuto === 'function') {
+      if (state.config.autoEat && bot.autoEat?.setOpts && typeof bot.autoEat.enableAuto === 'function') {
         bot.autoEat.setOpts({ priority: 'saturation', minHunger: 8, minHealth: 8, returnToLastItem: true, bannedFood: ['rotten_flesh', 'pufferfish', 'poisonous_potato', 'spider_eye'] });
         bot.autoEat.enableAuto();
         bot.autoEat.on?.('eatStart', (data) => { if (isCurrentSession()) this.emitEvent('behavior', botId, { priority: 'SURVIVAL', action: 'EAT_STARTED', item: String(data?.food?.name || '').slice(0, 64) }); });
         bot.autoEat.on?.('eatFail', (error) => { if (isCurrentSession()) this.emitEvent('behavior', botId, { priority: 'SURVIVAL', action: 'EAT_FAILED', reason: safeError(error) }); });
       }
-      this.emitEvent('bot_state', botId, { status: 'ONLINE', detail: 'وصلت حزمة Spawn من العالم.' });
+      this.emitEvent('bot_state', botId, { status: 'ONLINE', detail: 'وصلت حزمة Spawn من العالم؛ دخول البوت تأكد فعليًا.' });
       this.snapshot(botId, state, true);
       this.emitEvent('world', botId, {
         version: bot.version,
@@ -168,7 +186,11 @@ class BotManager extends EventEmitter {
       });
       this.behavior.onConnectionRestored(botId);
     });
-    bot.on('health', () => { if (isCurrentSession()) this.snapshot(botId, state, true); });
+    bot.on('health', () => {
+      if (!isCurrentSession()) return;
+      this.snapshot(botId, state, true);
+      this.behavior.onFood(botId);
+    });
     bot.on('food', () => {
       if (!isCurrentSession()) return;
       this.snapshot(botId, state, true);
@@ -183,7 +205,8 @@ class BotManager extends EventEmitter {
     bot.on('respawn', () => {
       if (!isCurrentSession()) return;
       state.status = 'ONLINE';
-      this.emitEvent('bot_state', botId, { status: 'ONLINE', detail: 'أبلغ Minecraft عن إعادة الظهور.' });
+      state.spawnedAt = Date.now();
+      this.emitEvent('bot_state', botId, { status: 'ONLINE', detail: 'أبلغ Minecraft عن إعادة الظهور داخل العالم.' });
       this.snapshot(botId, state, true);
       this.behavior.onRespawn(botId);
     });
@@ -212,7 +235,7 @@ class BotManager extends EventEmitter {
       if (!isCurrentSession()) return;
       state.lastError = safeError(error);
       this.emitEvent('bot_error', botId, { reason: state.lastError });
-      if (state.status === 'CONNECTING' || state.status === 'JOINING') {
+      if (['CONNECTING', 'AUTHENTICATING', 'JOINING'].includes(state.status)) {
         state.status = 'FAILED';
         this.emitEvent('bot_state', botId, { status: 'FAILED', reason: state.lastError, retryable: !state.permanentKick });
       }
@@ -224,7 +247,7 @@ class BotManager extends EventEmitter {
       state.lastError = safeError(reason || state.lastError || 'انتهت جلسة Minecraft.');
       if (state.reconnectTimer) clearTimeout(state.reconnectTimer);
       if (state.stableTimer) clearTimeout(state.stableTimer);
-      if (previous === 'ONLINE' || previous === 'DEAD') this.behavior.onDisconnected(botId);
+      if (previous === 'ONLINE' || previous === 'DEAD' || state.task) this.behavior.onDisconnected(botId);
       if (state.userStopped || state.permanentKick || !state.reconnectEnabled) {
         state.status = state.permanentKick ? 'FAILED' : 'DISCONNECTED';
         this.emitEvent('bot_state', botId, { status: state.status, reason: state.lastError, retryable: false });
@@ -278,7 +301,7 @@ class BotManager extends EventEmitter {
     const bot = state.bot;
     if (!bot || state.status !== 'ONLINE') return;
     const now = Date.now();
-    if (!force && now - state.lastSnapshotAt < 1000) return;
+    if (!force && now - state.lastSnapshotAt < 2500) return;
     state.lastSnapshotAt = now;
     const position = finitePosition(bot.entity?.position);
     const inventory = bot.inventory?.items?.().map((item) => ({
@@ -288,6 +311,21 @@ class BotManager extends EventEmitter {
       slot: Number(item.slot),
       type: Number(item.type),
     })) || [];
+    const inventorySlots = Array.from({ length: 36 }, (_, index) => {
+      const slot = index + 9;
+      const item = bot.inventory?.slots?.[slot];
+      return item ? {
+        slot,
+        name: String(item.name || 'unknown'),
+        displayName: String(item.displayName || item.name || 'unknown').slice(0, 48),
+        count: Number(item.count) || 0,
+      } : { slot, name: null, displayName: null, count: 0 };
+    });
+    const equipmentSlots = [5, 6, 7, 8, 45].map((slot) => {
+      const item = bot.inventory?.slots?.[slot];
+      return item ? { slot, name: String(item.name || 'unknown'), displayName: String(item.displayName || item.name || 'unknown').slice(0, 48), count: Number(item.count) || 0 }
+        : { slot, name: null, displayName: null, count: 0 };
+    });
     const players = Object.values(bot.players || {}).map((player) => ({
       username: String(player.username || '').slice(0, 32),
       position: finitePosition(player.entity?.position),
@@ -309,17 +347,52 @@ class BotManager extends EventEmitter {
       pitch: Number.isFinite(bot.entity?.pitch) ? Number(bot.entity.pitch) : null,
       dimension: bot.game?.dimension || null,
       gameMode: bot.game?.gameMode || null,
+      difficulty: bot.game?.difficulty ?? null,
+      pingMs: Number.isFinite(bot.players?.[bot.username]?.ping) ? Number(bot.players[bot.username].ping) : null,
+      onlineSince: state.spawnedAt || null,
+      uptimeMs: state.spawnedAt > 0 ? Math.max(0, now - state.spawnedAt) : null,
       inventory,
+      inventorySlots,
+      equipmentSlots,
+      currentTask: state.task ? {
+        id: state.task.id,
+        type: state.task.type,
+        blockName: state.task.blockName,
+        count: state.task.count,
+        verifiedCollected: state.task.collected,
+        progress: Math.floor((state.task.collected / state.task.count) * 100),
+        status: state.task.paused ? 'PAUSED' : 'RUNNING',
+        currentAction: state.task.currentAction || null,
+      } : null,
       players,
-      entities,
+      entities: entities.slice(0, 60),
       observedAt: now,
     });
   }
 
+  observeNearbyBlocks(botId) {
+    const { bot } = this.getActive(botId);
+    const blocks = bot.findBlocks({
+      matching: (block) => Boolean(block && block.name !== 'air' && block.boundingBox !== 'empty'),
+      maxDistance: 8,
+      count: 36,
+    }).map((position) => {
+      const block = bot.blockAt(position);
+      return block ? { name: String(block.name), position: finitePosition(position) } : null;
+    }).filter(Boolean);
+    const result = { position: finitePosition(bot.entity?.position), blocks, observedAt: Date.now() };
+    this.emitEvent('nearby_blocks', botId, result);
+    return result;
+  }
+
   getActive(botId) {
     const state = this.bots.get(String(botId));
-    if (!state?.bot || state.status !== 'ONLINE') throw new Error('لا يوجد اتصال Minecraft حيّ لهذا البوت.');
+    if (!state?.bot || state.status !== 'ONLINE') throw new Error('لا توجد جلسة داخل عالم Minecraft؛ انتظر تأكيد Spawn الحقيقي.');
     return state;
+  }
+
+  ensureTaskIdle(state) {
+    if (state?.task) throw new Error('هناك مهمة جمع نشطة لهذا البوت؛ أوقفها أو ألغها قبل تنفيذ حركة أو تعدين يدوي.');
   }
 
   async command(message) {
@@ -337,7 +410,9 @@ class BotManager extends EventEmitter {
       case 'use-item': return this.useItem(botId);
       case 'interact-block': return this.interactBlock(botId, message.position);
       case 'respawn': return this.respawn(botId);
-      case 'collect': return this.collect(botId, message.blockName, message.count, message.taskId);
+      case 'collect': return this.tools.execute('collect_block', { block_name: message.blockName, amount: message.count }, { botId, taskId: message.taskId, alreadyCollected: message.alreadyCollected || 0, initialInventoryCount: message.initialInventoryCount });
+      case 'execute-tool': return this.tools.execute(message.toolName, message.arguments, { botId, taskId: message.taskId, alreadyCollected: message.alreadyCollected || 0, initialInventoryCount: message.initialInventoryCount });
+      case 'observe-nearby-blocks': return this.observeNearbyBlocks(botId);
       case 'pause-task': return this.pauseTask(botId, message.taskId);
       case 'resume-task': return this.resumeTask(botId, message.taskId);
       case 'cancel-task': return this.cancelTask(botId, message.taskId);
@@ -352,9 +427,9 @@ class BotManager extends EventEmitter {
     state.pauseReason = 'user';
     if (state.reconnectTimer) { clearTimeout(state.reconnectTimer); state.reconnectTimer = null; }
     if (state.task) {
-      state.task.cancelled = true;
-      state.task.resumeResolver?.();
-      this.emitEvent('task_state', state.id, { taskId: state.task.id, status: 'CANCELLED', verifiedCollected: state.task.collected || 0, reason: 'أوقف المستخدم جلسة Minecraft؛ أُلغيت المهمة ولم نكملها.' });
+      try { await this.taskEngine.cancel(state, 'أوقف المستخدم جلسة Minecraft؛ أُلغيت المهمة ولم نكملها.'); }
+      catch { /* Disconnect remains authoritative; task state is still recorded as cancelled when possible. */ }
+      state.pauseReason = 'user';
     }
     if (state.bot) state.bot.quit('Disconnected by MineBot AI user');
     else {
@@ -380,7 +455,9 @@ class BotManager extends EventEmitter {
   }
 
   control(botId, rawStates) {
-    const { bot } = this.getActive(botId);
+    const state = this.getActive(botId);
+    this.ensureTaskIdle(state);
+    const { bot } = state;
     if (!rawStates || typeof rawStates !== 'object' || Array.isArray(rawStates)) throw new TypeError('حالات الحركة غير صالحة.');
     for (const name of Object.keys(rawStates)) {
       if (!CONTROL_STATES.has(name)) throw new TypeError(`حالة حركة غير مسموحة: ${name}.`);
@@ -389,7 +466,9 @@ class BotManager extends EventEmitter {
   }
 
   async follow(botId, username, rawDistance = 2) {
-    const { bot } = this.getActive(botId);
+    const state = this.getActive(botId);
+    this.ensureTaskIdle(state);
+    const { bot } = state;
     const targetName = String(username || '').trim();
     const target = bot.players?.[targetName]?.entity;
     if (!target) throw new Error('اللاعب غير ظاهر في قائمة Minecraft الحالية.');
@@ -399,7 +478,9 @@ class BotManager extends EventEmitter {
   }
 
   async goto(botId, rawPosition, rawRadius = 1) {
-    const { bot } = this.getActive(botId);
+    const state = this.getActive(botId);
+    this.ensureTaskIdle(state);
+    const { bot } = state;
     const position = rawPosition || {};
     const x = Number(position.x), y = Number(position.y), z = Number(position.z);
     const radius = Number(rawRadius);
@@ -409,13 +490,20 @@ class BotManager extends EventEmitter {
   }
 
   async stopNavigation(botId) {
-    const { bot } = this.getActive(botId);
+    const state = this.getActive(botId);
+    if (state.task) {
+      if (state.task.paused) return;
+      return this.pauseTask(botId, state.task.id);
+    }
+    const { bot } = state;
     bot.pathfinder.setGoal(null);
     bot.clearControlStates();
   }
 
   async dig(botId, rawPosition) {
-    const { bot } = this.getActive(botId);
+    const state = this.getActive(botId);
+    this.ensureTaskIdle(state);
+    const { bot } = state;
     const position = rawPosition || {};
     const coords = [Number(position.x), Number(position.y), Number(position.z)];
     if (!coords.every(Number.isSafeInteger)) throw new TypeError('إحداثيات الكتلة غير صالحة.');
@@ -428,13 +516,17 @@ class BotManager extends EventEmitter {
   }
 
   async useItem(botId) {
-    const { bot } = this.getActive(botId);
+    const state = this.getActive(botId);
+    this.ensureTaskIdle(state);
+    const { bot } = state;
     if (!bot.heldItem) throw new Error('لا يوجد عنصر ممسوك بيد البوت.');
     bot.activateItem();
   }
 
   async interactBlock(botId, rawPosition) {
-    const { bot } = this.getActive(botId);
+    const state = this.getActive(botId);
+    this.ensureTaskIdle(state);
+    const { bot } = state;
     const position = rawPosition || {};
     const coords = [Number(position.x), Number(position.y), Number(position.z)];
     if (!coords.every(Number.isSafeInteger)) throw new TypeError('إحداثيات الكتلة غير صالحة.');
@@ -451,127 +543,25 @@ class BotManager extends EventEmitter {
     state.bot.respawn();
   }
 
-  async collect(botId, rawBlockName, rawCount = 1, taskId = '') {
-    const state = this.getActive(botId);
-    const blockName = String(rawBlockName || '').trim().toLowerCase();
-    const count = Number(rawCount);
-    const mcData = this.minecraftData(state.bot.version);
-    const block = mcData.blocksByName[blockName];
-    const item = mcData.itemsByName[blockName];
-    if (!block || !item || !Number.isInteger(count) || count < 1 || count > 320) throw new TypeError('تدعم مهمة الجمع الآن كتلًا لها عنصر مطابق في المخزون، بعدد 1–320.');
-    if (state.task) throw new Error('يوجد عمل حيّ آخر لهذا البوت. أوقفه أو ألغِه أولًا.');
-    const task = { id: String(taskId || `collect-${Date.now()}`), type: 'collect', blockName, count, paused: false, cancelled: false, collected: 0 };
-    if (task.id.length > 128) throw new TypeError('معرّف المهمة غير صالح.');
-    state.task = task;
-    this.emitEvent('task_state', botId, { taskId: task.id, status: 'RUNNING', goal: `اجمع ${count} من ${blockName}.`, progress: 0, verifiedCollected: 0 });
-    let attempts = 0;
-    try {
-      while (task.collected < count) {
-        await this.waitUntilTaskCanRun(state, task);
-        if (++attempts > count * 3 + 20) throw new Error('توقفت المهمة بعد محاولات جمع متكررة دون تحقق كافٍ من المخزون.');
-        const bot = this.getActive(botId).bot;
-        const position = bot.findBlock({ matching: (candidate) => candidate?.name === blockName, maxDistance: 48 });
-        if (!position) throw new Error(`لا توجد كتلة ${blockName} محمّلة في نطاق 48 كتلة من البوت.`);
-        try {
-          await bot.pathfinder.goto(new this.pathfinder.goals.GoalGetToBlock(position.position));
-        } catch (error) {
-          await this.waitUntilTaskCanRun(state, task);
-          if (state.status === 'ONLINE') continue;
-          throw error;
-        }
-        await this.waitUntilTaskCanRun(state, task);
-        const currentBot = this.getActive(botId).bot;
-        const current = currentBot.blockAt(position.position);
-        if (!current || current.name !== blockName || !currentBot.canDigBlock(current)) {
-          this.emitEvent('task_progress', botId, { taskId: task.id, observed: 'target-changed', position: { x: position.position.x, y: position.position.y, z: position.position.z } });
-          continue;
-        }
-        const before = this.countItem(currentBot, blockName);
-        await currentBot.dig(current, true);
-        const deadline = Date.now() + 6000;
-        let after = before;
-        while (Date.now() < deadline && after <= before) {
-          await this.waitUntilTaskCanRun(state, task);
-          after = this.countItem(this.getActive(botId).bot, blockName);
-          if (after <= before) await new Promise((resolve) => setTimeout(resolve, 150));
-        }
-        const gained = Math.max(0, after - before);
-        if (gained <= 0) throw new Error('تم كسر الكتلة، لكن لم يؤكد مخزون Minecraft استلام العنصر خلال المهلة؛ لم نسجل تقدمًا.');
-        task.collected = Math.min(count, task.collected + gained);
-        this.emitEvent('task_state', botId, {
-          taskId: task.id,
-          status: task.collected >= count ? 'COMPLETED' : 'RUNNING',
-          goal: `اجمع ${count} من ${blockName}.`,
-          progress: Math.floor(task.collected / count * 100),
-          verifiedCollected: task.collected,
-          verifiedBy: task.collected >= count ? 'inventory-delta' : undefined,
-          observedAt: Date.now(),
-        });
-        this.snapshot(botId, state, true);
-      }
-    } catch (error) {
-      if (!task.cancelled) {
-        const paused = Boolean(task.paused || state.pauseReason || state.status === 'RECONNECTING' || state.status === 'DEAD');
-        this.emitEvent('task_state', botId, { taskId: task.id, status: paused ? 'PAUSED' : 'FAILED', reason: safeError(error), verifiedCollected: task.collected });
-      }
-      throw error;
-    } finally {
-      if (state.task === task) state.task = null;
-      if (state.status === 'ONLINE') this.snapshot(botId, state, true);
-    }
-  }
-
-  countItem(bot, itemName) {
-    return bot.inventory.items().reduce((sum, item) => item.name === itemName ? sum + item.count : sum, 0);
-  }
-
-  async waitUntilTaskCanRun(state, task) {
-    const started = Date.now();
-    while (true) {
-      if (task.cancelled || state.task !== task) throw new Error('ألغى المستخدم المهمة.');
-      if (state.status === 'ONLINE' && !task.paused && !state.pauseReason && state.bot) return;
-      if ((state.status === 'FAILED' || state.status === 'DISCONNECTED') && (state.userStopped || !state.reconnectEnabled)) throw new Error(state.lastError || 'انقطع الاتصال قبل تنفيذ المهمة.');
-      if (Date.now() - started > 600_000) throw new Error('ظلت المهمة متوقفة أكثر من 10 دقائق؛ أوقفنا الانتظار دون ادعاء إكمالها.');
-      await new Promise((resolve) => {
-        const timer = setTimeout(resolve, 250);
-        task.resumeResolver = () => { clearTimeout(timer); resolve(); };
-      });
-      task.resumeResolver = null;
-    }
-  }
-
   pauseTask(botId, taskId) {
     const state = this.bots.get(String(botId));
     if (!state?.task || (taskId && state.task.id !== taskId)) throw new Error('لا توجد مهمة حية مطابقة لهذا المعرّف.');
-    state.pauseReason = 'user';
-    state.task.paused = true;
-    state.bot?.pathfinder?.setGoal(null);
-    state.bot?.clearControlStates?.();
-    this.emitEvent('task_state', botId, { taskId: state.task.id, status: 'PAUSED', reason: 'أوقف المستخدم المهمة.' });
+    if (state.pauseReason && state.pauseReason !== 'user') throw new Error('المهمة متوقفة بأولوية البقاء أو الاتصال؛ لا يمكن استبدال سبب التوقف يدويًا.');
+    return this.taskEngine.pause(state, 'user', 'أوقف المستخدم المهمة مؤقتًا.');
   }
 
   resumeTask(botId, taskId) {
     const state = this.bots.get(String(botId));
-    if (!state?.task || (taskId && state.task.id !== taskId) || state.status !== 'ONLINE') throw new Error('لا توجد مهمة متوقفة مع اتصال Minecraft حيّ.');
-    if (state.pauseReason !== 'user') throw new Error('توقف المهمة بسبب حالة بقاء أو اتصال؛ لا يمكن تجاوز أولوية المحرك.');
-    state.pauseReason = '';
-    state.task.paused = false;
-    state.task.resumeResolver?.();
-    this.emitEvent('task_state', botId, { taskId: state.task.id, status: 'RUNNING', reason: 'استأنف المستخدم المهمة.' });
+    if (!state?.task || (taskId && state.task.id !== taskId)) throw new Error('لا توجد مهمة متوقفة مطابقة لهذا المعرّف.');
+    return this.taskEngine.resume(state, 'استأنف المستخدم المهمة بعد إيقاف الجمع الجاري بأمان.');
   }
 
   cancelTask(botId, taskId) {
     const state = this.bots.get(String(botId));
     if (!state?.task || (taskId && state.task.id !== taskId)) throw new Error('لا توجد مهمة حية مطابقة لهذا المعرّف.');
-    const cancelled = state.task;
-    cancelled.cancelled = true;
-    cancelled.resumeResolver?.();
-    state.task = null;
-    state.pauseReason = '';
-    state.bot?.pathfinder?.setGoal(null);
-    state.bot?.clearControlStates?.();
-    this.emitEvent('task_state', botId, { taskId: cancelled.id, status: 'CANCELLED', verifiedCollected: cancelled.collected || 0, reason: 'ألغى المستخدم المهمة.' });
+    return this.taskEngine.cancel(state, 'ألغى المستخدم المهمة.');
   }
+
 }
 
 module.exports = { BotManager, CONTROL_STATES, AUTH_MODES, validateBotConfig, safeError, finitePosition };

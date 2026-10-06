@@ -7,6 +7,7 @@ const mineflayer = require('mineflayer');
 const { pathfinder, Movements, goals } = require('mineflayer-pathfinder');
 const minecraftData = require('minecraft-data');
 const { loader: autoEat } = require('mineflayer-auto-eat');
+const { plugin: collectBlock } = require('mineflayer-collectblock');
 const { BotManager, safeError } = require('./bot-manager');
 
 function parseArguments(argv) {
@@ -38,7 +39,7 @@ function startEngine({ port, token, authDir }) {
   };
 
   const connectManager = () => {
-    manager = new BotManager({ mineflayer, pathfinder: { pathfinder, Movements, goals }, minecraftData, authCacheDir: authDir, autoEat });
+    manager = new BotManager({ mineflayer, pathfinder: { pathfinder, Movements, goals }, minecraftData, authCacheDir: authDir, autoEat, collectBlock });
     manager.on('event', (event) => write({ channel: 'event', ...event }));
   };
   connectManager();
@@ -78,7 +79,15 @@ function startEngine({ port, token, authDir }) {
       Promise.resolve(manager.command(message)).then(() => {
         if (message.requestId) write({ channel: 'command_result', requestId: message.requestId, ok: true });
       }).catch((error) => {
-        if (message.requestId) write({ channel: 'command_result', requestId: message.requestId, ok: false, error: safeError(error) });
+        if (message.requestId) write({
+          channel: 'command_result',
+          requestId: message.requestId,
+          action: String(message.action || '').slice(0, 48),
+          botId: String(message.botId || '').slice(0, 128),
+          taskId: String(message.taskId || '').slice(0, 128),
+          ok: false,
+          error: safeError(error),
+        });
       });
     }
   });

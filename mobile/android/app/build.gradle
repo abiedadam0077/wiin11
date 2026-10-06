@@ -63,7 +63,7 @@ dependencies {
 
 tasks.register('syncNodeProject', Sync) {
     from(file('../../engine')) {
-        include 'main.js', 'bot-manager.js', 'behavior-engine.js', 'package.json'
+        include 'main.js', 'bot-manager.js', 'behavior-engine.js', 'task-engine.js', 'tool-registry.js', 'package.json'
         into 'nodejs-project'
     }
     from(file('../../engine/node_modules')) {

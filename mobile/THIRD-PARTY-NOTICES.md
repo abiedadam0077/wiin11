@@ -6,6 +6,8 @@ The Android application uses Android platform APIs and bundles the following run
 - Mineflayer `4.39.0` (MIT).
 - mineflayer-pathfinder `2.4.5` (MIT).
 - mineflayer-auto-eat `5.0.3` (MIT).
+- mineflayer-collectblock `1.6.0` (MIT).
+- mineflayer-tool `1.2.0` (MIT; installed transitively by mineflayer-collectblock).
 - Transitive Node.js packages listed in `engine/package-lock.json`; their licenses and notices must be included in any redistributable binary as required by their respective packages.
 - Robolectric `4.14.1` and JUnit `4.13.2` are test-only dependencies and are not packaged in the APK.
 

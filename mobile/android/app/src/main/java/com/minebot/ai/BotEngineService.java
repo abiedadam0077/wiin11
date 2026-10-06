@@ -215,6 +215,7 @@ public final class BotEngineService extends Service {
                 database.upsert("bot_states", state.toString());
             }
             if (type.equals("task_state")) persistTaskEvent(botId, message);
+            if (type.equals("task_progress")) persistTaskProgress(message);
             if (type.equals("bot_state") || type.equals("bot_error") || type.equals("task_state") || type.equals("behavior")) persistLog(botId, message);
             emit(type, message);
             updateNotification(message);
@@ -226,6 +227,7 @@ public final class BotEngineService extends Service {
             return;
         }
         if ("command_result".equals(channel)) {
+            if (!message.optBoolean("ok", true)) persistCommandFailure(message);
             emit("command_result", message);
             return;
         }
@@ -253,7 +255,7 @@ public final class BotEngineService extends Service {
             JSONObject state = states.optJSONObject(i);
             if (state == null) continue;
             String status = state.optString("status", "");
-            if (!status.equals("ONLINE") && !status.equals("JOINING") && !status.equals("CONNECTING") && !status.equals("RECONNECTING") && !status.equals("DEAD")) continue;
+            if (!status.equals("ONLINE") && !status.equals("JOINING") && !status.equals("CONNECTING") && !status.equals("AUTHENTICATING") && !status.equals("RECONNECTING") && !status.equals("DEAD")) continue;
             try {
                 state.put("status", "DISCONNECTED").put("type", "bot_state")
                         .put("detail", "أُعيد تشغيل خدمة Android؛ لا تُعد الجلسة السابقة متصلة حتى تصل حزمة Minecraft جديدة.")
@@ -274,7 +276,9 @@ public final class BotEngineService extends Service {
             if (!status.equals("running") && !status.equals("paused")) continue;
             try {
                 String reason = "أُعيد تشغيل خدمة Android؛ حالة العمل التنفيذية السابقة لم تعد موجودة. راجع المخزون ثم أعد تشغيل المهمة يدويًا.";
-                task.put("status", "interrupted").put("lastReason", reason).put("updatedAt", System.currentTimeMillis());
+                task.put("status", "interrupted").put("lastReason", reason)
+                        .put("currentAction", "لا توجد جلسة تنفيذ حية؛ تحقق من المخزون قبل إعادة التشغيل.")
+                        .put("updatedAt", System.currentTimeMillis());
                 database.upsert("tasks", task.toString());
                 JSONObject history = new JSONObject().put("id", UUID.randomUUID().toString()).put("taskId", task.optString("id"))
                         .put("botId", task.optString("botId")).put("status", "INTERRUPTED").put("message", reason).put("createdAt", System.currentTimeMillis());
@@ -296,7 +300,9 @@ public final class BotEngineService extends Service {
                     .put("username", bot.optString("username", ""))
                     .put("auth", bot.optString("authMode", "offline"))
                     .put("version", bot.optString("version", "auto"))
-                    .put("reconnect", bot.optBoolean("reconnect", true));
+                    .put("reconnect", bot.optBoolean("reconnect", true))
+                    .put("autoEat", bot.optBoolean("autoEat", true))
+                    .put("autoRespawn", bot.optBoolean("autoRespawn", false));
             sendCommandJson(new JSONObject().put("action", "connect").put("botId", botId).put("config", config).put("requestId", UUID.randomUUID().toString()));
         } catch (Exception error) {
             try {
@@ -362,7 +368,7 @@ public final class BotEngineService extends Service {
             JSONObject state = states.optJSONObject(i);
             if (state == null) continue;
             String status = state.optString("status", "");
-            if (status.equals("ONLINE") || status.equals("JOINING") || status.equals("CONNECTING") || status.equals("RECONNECTING") || status.equals("DEAD")) sendAction("disconnect", state.optString("botId", state.optString("id", "")));
+            if (status.equals("ONLINE") || status.equals("JOINING") || status.equals("CONNECTING") || status.equals("AUTHENTICATING") || status.equals("RECONNECTING") || status.equals("DEAD")) sendAction("disconnect", state.optString("botId", state.optString("id", "")));
         }
         try { sendCommandJson(new JSONObject().put("action", "shutdown")); } catch (JSONException ignored) { }
         io.execute(() -> { try { Thread.sleep(300); } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); } shutdownRuntime(); });
@@ -386,13 +392,34 @@ public final class BotEngineService extends Service {
             JSONObject state = states.optJSONObject(i);
             if (state == null) continue;
             String status = state.optString("status", "");
-            if (status.equals("ONLINE") || status.equals("JOINING") || status.equals("CONNECTING") || status.equals("RECONNECTING") || status.equals("DEAD")) return;
+            if (status.equals("ONLINE") || status.equals("JOINING") || status.equals("CONNECTING") || status.equals("AUTHENTICATING") || status.equals("RECONNECTING") || status.equals("DEAD")) return;
         }
         try { sendCommandJson(new JSONObject().put("action", "shutdown")); } catch (JSONException ignored) { }
         io.execute(() -> {
             try { Thread.sleep(250); } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); }
             if (!closing.get()) shutdownRuntime();
         });
+    }
+
+    private void persistCommandFailure(JSONObject result) {
+        String action = result.optString("action", "");
+        if (!action.equals("execute-tool") && !action.equals("collect")) return;
+        String taskId = result.optString("taskId", "");
+        if (taskId.isEmpty()) return;
+        String botId = result.optString("botId", "");
+        String reason = safe(result.optString("error", "تعذر تنفيذ أمر المهمة."));
+        try {
+            JSONObject task = findById(database.readAll("tasks"), taskId);
+            if (task == null) return;
+            String status = task.optString("status", "");
+            if (status.equals("completed") || status.equals("cancelled") || status.equals("failed") || status.equals("running") || status.equals("paused")) return;
+            task.put("status", "failed").put("lastReason", reason).put("updatedAt", System.currentTimeMillis());
+            database.upsert("tasks", task.toString());
+            JSONObject history = new JSONObject().put("id", UUID.randomUUID().toString()).put("taskId", taskId)
+                    .put("botId", botId).put("status", "FAILED").put("message", reason).put("createdAt", System.currentTimeMillis());
+            database.upsert("task_history", history.toString());
+            persistLog(botId, new JSONObject().put("type", "task_command").put("status", "FAILED").put("reason", reason));
+        } catch (Exception ignored) { }
     }
 
     private void persistTaskEvent(String botId, JSONObject event) {
@@ -406,14 +433,32 @@ public final class BotEngineService extends Service {
                 if (event.has("progress")) task.put("progress", event.optInt("progress"));
                 if (event.has("verifiedCollected")) task.put("verifiedCollected", event.optInt("verifiedCollected"));
                 if (event.has("verifiedBy")) task.put("verifiedBy", event.optString("verifiedBy"));
+                if (event.has("initialInventoryCount")) task.put("initialInventoryCount", event.optInt("initialInventoryCount"));
+                if (event.has("currentAction")) task.put("currentAction", safe(event.optString("currentAction")));
+                if (event.has("blockName")) task.put("blockName", event.optString("blockName"));
+                if (event.has("count")) task.put("count", event.optInt("count"));
                 if (event.has("priority")) task.put("runtimePriority", event.optString("priority"));
                 if (event.has("goal")) task.put("goal", event.optString("goal"));
                 if (event.has("reason")) task.put("lastReason", safe(event.optString("reason")));
-                task.put("updatedAt", event.optLong("at", System.currentTimeMillis()));
+                task.put("updatedAt", event.optLong("observedAt", event.optLong("at", System.currentTimeMillis())));
                 database.upsert("tasks", task.toString());
             }
-            JSONObject history = new JSONObject().put("id", UUID.randomUUID().toString()).put("taskId", taskId).put("botId", botId).put("status", event.optString("status", "")).put("message", event.optString("reason", event.optString("goal", "Minecraft engine event"))).put("createdAt", System.currentTimeMillis());
+            JSONObject history = new JSONObject().put("id", UUID.randomUUID().toString()).put("taskId", taskId).put("botId", botId).put("status", event.optString("status", "")).put("message", event.optString("reason", event.optString("currentAction", event.optString("goal", "Minecraft engine event")))).put("createdAt", System.currentTimeMillis());
             database.upsert("task_history", history.toString());
+        } catch (Exception ignored) { }
+    }
+
+    private void persistTaskProgress(JSONObject event) {
+        String taskId = event.optString("taskId", "");
+        if (taskId.isEmpty()) return;
+        try {
+            JSONObject task = findById(database.readAll("tasks"), taskId);
+            if (task == null || !task.optString("status", "").equals("running")) return;
+            if (event.has("currentAction")) task.put("currentAction", safe(event.optString("currentAction")));
+            if (event.has("blockName")) task.put("blockName", event.optString("blockName"));
+            if (event.has("position")) task.put("currentTarget", event.optJSONObject("position"));
+            task.put("updatedAt", event.optLong("observedAt", event.optLong("at", System.currentTimeMillis())));
+            database.upsert("tasks", task.toString());
         } catch (Exception ignored) { }
     }
 
@@ -424,7 +469,7 @@ public final class BotEngineService extends Service {
                     .put("botId", botId)
                     .put("category", event.optString("type", "engine"))
                     .put("level", event.optString("status", "").equals("FAILED") ? "error" : "info")
-                    .put("message", safe(event.optString("detail", event.optString("reason", event.optString("action", event.optString("status", "Minecraft event"))))))
+                    .put("message", safe(event.optString("detail", event.optString("reason", event.optString("currentAction", event.optString("action", event.optString("status", "Minecraft event")))))))
                     .put("createdAt", System.currentTimeMillis());
             database.upsert("logs", row.toString());
         } catch (Exception ignored) { }
@@ -436,7 +481,7 @@ public final class BotEngineService extends Service {
             String status = event.optString("status", "");
             NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
             if (manager != null) {
-                if (status.equals("ONLINE") || status.equals("CONNECTING") || status.equals("JOINING") || status.equals("RECONNECTING") || status.equals("DEAD")) {
+                if (status.equals("ONLINE") || status.equals("CONNECTING") || status.equals("AUTHENTICATING") || status.equals("JOINING") || status.equals("RECONNECTING") || status.equals("DEAD")) {
                     manager.notify(NOTIFICATION_ID, buildNotification("جلسة Minecraft", "حالة البروتوكول: " + status));
                 } else if (status.equals("FAILED") || status.equals("DISCONNECTED")) {
                     manager.notify(NOTIFICATION_ID, buildNotification("جلسة Minecraft غير متصلة", safe(event.optString("reason", status))));

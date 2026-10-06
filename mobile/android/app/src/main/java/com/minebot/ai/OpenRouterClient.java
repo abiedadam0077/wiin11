@@ -76,7 +76,7 @@ final class OpenRouterClient {
     private JSONObject requestPlanForModel(String apiKey, String prompt, String model) throws Exception {
         JSONObject system = new JSONObject()
                 .put("role", "system")
-                .put("content", "أنت مخطط عالي المستوى فقط لتطبيق Minecraft Java. لا تدّع معرفة حالة العالم أو المخزون أو الاتصال. لا تنفّذ أوامر. أعد JSON فقط بالشكل {\"action\":\"collect\",\"blockName\":\"oak_log\",\"count\":4,\"reason\":\"...\"} لمهمة جمع واحدة بسيطة، أو {\"action\":\"unsupported\",\"reason\":\"...\"} إذا كان الطلب لا يمكن تمثيله بجمع كتلة واحدة. اسم الكتلة يكون أحرفًا لاتينية صغيرة وأرقامًا وشرطة سفلية، والعدد بين 1 و320.");
+                .put("content", "أنت مخطط عالي المستوى فقط لتطبيق Minecraft Java. لا تدّع معرفة حالة العالم أو المخزون أو الاتصال. لا تنفّذ أوامر ولا تخترع أدوات. أعد JSON فقط بالشكل {\"action\":\"collect\",\"blockName\":\"oak_log\",\"count\":4,\"reason\":\"...\"} لمهمة جمع كتلة واحدة تعرف أن إسقاطها عنصر بالاسم نفسه مثل oak_log أو dirt أو sand، أو {\"action\":\"unsupported\",\"reason\":\"...\"} إذا لم يكن ذلك مؤكدًا أو كان الطلب متعدد الخطوات. لا تقترح خامات أو أوراقًا أو محاصيل تتطلب تحويلًا أو إسقاطًا مختلف الاسم. اسم الكتلة يكون أحرفًا لاتينية صغيرة وأرقامًا وشرطة سفلية، والعدد بين 1 و320.");
         JSONObject user = new JSONObject().put("role", "user").put("content", prompt);
         JSONArray messages = new JSONArray().put(system).put(user);
         JSONObject body = new JSONObject()

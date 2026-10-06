@@ -25,9 +25,11 @@ test('Microsoft device-code auth stack initializes with the locked security over
 
 test('connection configuration validates Java host, port, username, auth, and version', () => {
   assert.deepEqual(validateBotConfig({ host: 'play.example.net', port: 25565, username: 'MineBot_01', auth: 'offline', version: 'auto' }), {
-    host: 'play.example.net', port: 25565, username: 'MineBot_01', auth: 'offline', version: false,
+    host: 'play.example.net', port: 25565, username: 'MineBot_01', auth: 'offline', version: false, reconnect: true, autoEat: true, autoRespawn: false,
   });
   assert.equal(validateBotConfig({ host: 'mc.example.net', port: 25566, username: 'player@example.net', auth: 'microsoft', version: '1.21.11' }).version, '1.21.11');
+  assert.throws(() => validateBotConfig({ host: 'mc.example.net', port: 25565, username: 'bad account@example.net', auth: 'microsoft' }), /دون مسافات/);
+  assert.equal(validateBotConfig({ host: 'mc.example.net', port: 25565, username: 'player@example.net', auth: 'microsoft', autoEat: false, autoRespawn: true }).autoRespawn, true);
   for (const config of [
     { host: '', port: 25565, username: 'ValidName' },
     { host: 'bad host', port: 25565, username: 'ValidName' },

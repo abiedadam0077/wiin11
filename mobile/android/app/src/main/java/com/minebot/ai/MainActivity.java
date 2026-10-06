@@ -370,7 +370,10 @@ public final class MainActivity extends Activity {
         actions.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
         String storedStatus = live == null ? "DISCONNECTED" : live.optString("status", "DISCONNECTED");
         boolean mayHaveSession = "ONLINE".equals(storedStatus) || isTransientStatus(storedStatus);
-        if ("ONLINE".equals(status) || "CONNECTING".equals(status) || "JOINING".equals(status) || "RECONNECTING".equals(status) || "DEAD".equals(status))
+        if ("DEAD".equals(status)) {
+            actions.addView(smallButton("طلب إعادة الظهور", () -> sendEngineCommand(command("respawn", id)), true), weightMargin());
+            actions.addView(smallButton("إيقاف", () -> confirmDisconnectBot(id), false), weightMargin());
+        } else if ("ONLINE".equals(status) || "CONNECTING".equals(status) || "AUTHENTICATING".equals(status) || "JOINING".equals(status) || "RECONNECTING".equals(status))
             actions.addView(smallButton("إيقاف", () -> confirmDisconnectBot(id), false), weightMargin());
         else if (status.equals("STALE") && mayHaveSession)
             actions.addView(smallButton("إيقاف غير متحقق", () -> confirmDisconnectBot(id), false), weightMargin());
@@ -387,7 +390,15 @@ public final class MainActivity extends Activity {
         String food = snapshot.isNull("food") ? "غير متاح" : String.valueOf(snapshot.optDouble("food"));
         JSONObject position = snapshot.optJSONObject("position");
         String pos = position == null ? "غير متاح" : String.format(java.util.Locale.US, "%.1f, %.1f, %.1f", position.optDouble("x"), position.optDouble("y"), position.optDouble("z"));
-        addText(parent, "من العالم: صحة " + health + " · طعام " + food + " · موقع " + pos + observedAt, 11, GREEN, false, 0, 10);
+        String ping = snapshot.isNull("pingMs") ? "غير متاح" : snapshot.optInt("pingMs") + " ms";
+        String dimension = snapshot.isNull("dimension") ? "غير متاح" : snapshot.optString("dimension");
+        String gameMode = snapshot.isNull("gameMode") ? "غير متاح" : snapshot.optString("gameMode");
+        String difficulty = snapshot.isNull("difficulty") ? "غير متاح" : snapshot.optString("difficulty");
+        long uptime = snapshot.optLong("uptimeMs", -1);
+        String uptimeLabel = uptime < 0 ? "غير متاح" : (uptime / 1000) + " ثانية";
+        addText(parent, "من العالم: صحة " + health + " · طعام " + food + " · موقع " + pos + observedAt, 11, GREEN, false, 0, 5);
+        addText(parent, "العالم: " + dimension + " · نمط " + gameMode + " · صعوبة " + difficulty, 11, MUTED, false, 0, 5);
+        addText(parent, "تأخير جلسة البوت: " + ping + " · مدة الجلسة: " + uptimeLabel + " · لا يساوي ذلك Server Status Ping", 10, BLUE, false, 0, 10);
     }
 
     private void showBotDialog() {
@@ -407,11 +418,21 @@ public final class MainActivity extends Activity {
         reconnect.setText("إعادة الاتصال تلقائيًا بعد انقطاع الشبكة");
         reconnect.setTextColor(TEXT);
         reconnect.setChecked(true);
+        CheckBox autoEat = new CheckBox(this);
+        autoEat.setText("الأكل التلقائي من المخزون عند الحاجة");
+        autoEat.setTextColor(TEXT);
+        autoEat.setChecked(true);
+        CheckBox autoRespawn = new CheckBox(this);
+        autoRespawn.setText("طلب إعادة الظهور تلقائيًا بعد موت مرصود");
+        autoRespawn.setTextColor(TEXT);
+        autoRespawn.setChecked(false);
         LinearLayout form = form(name, username, version);
         addFormField(form, "السيرفر", serverSpinner);
         addFormField(form, "المصادقة", authSpinner);
         form.addView(reconnect);
-        addText(form, "لا تُدخل كلمة مرور Microsoft هنا. المصادقة تتم برمز جهاز رسمي عند التشغيل.", 11, MUTED, false, 0, 0);
+        form.addView(autoEat);
+        form.addView(autoRespawn);
+        addText(form, "لا تُدخل كلمة مرور Microsoft هنا. المصادقة تتم برمز جهاز رسمي. الأكل والظهور يستخدمان أحداث Minecraft وإعدادات هذا الملف.", 11, MUTED, false, 0, 0);
         new AlertDialog.Builder(this).setTitle("ملف بوت محلي")
                 .setView(form)
                 .setNegativeButton("إلغاء", null)
@@ -428,7 +449,7 @@ public final class MainActivity extends Activity {
                     JSONObject row = new JSONObject();
                     try {
                         row.put("id", UUID.randomUUID().toString()).put("name", botName).put("username", account).put("serverId", selectedServer.optString("id"))
-                                .put("version", gameVersion).put("authMode", auth).put("reconnect", reconnect.isChecked()).put("status", "configured")
+                                .put("version", gameVersion).put("authMode", auth).put("reconnect", reconnect.isChecked()).put("autoEat", autoEat.isChecked()).put("autoRespawn", autoRespawn.isChecked()).put("status", "configured")
                                 .put("createdAt", System.currentTimeMillis());
                         database.upsert("bots", row.toString());
                     } catch (JSONException ignored) { toast("تعذر حفظ ملف البوت."); }
@@ -475,6 +496,19 @@ public final class MainActivity extends Activity {
                 }).show();
     }
 
+    private String taskStatusLabel(String status) {
+        switch (String.valueOf(status).toLowerCase(java.util.Locale.ROOT)) {
+            case "pending": return "بانتظار التشغيل";
+            case "running": return "قيد التنفيذ";
+            case "paused": return "متوقفة مؤقتًا";
+            case "completed": return "مكتملة";
+            case "failed": return "فشلت";
+            case "cancelled": return "أُلغيت";
+            case "interrupted": return "انقطعت · تحقق قبل الإعادة";
+            default: return "غير متاح";
+        }
+    }
+
     private boolean isTerminal(String status) { return status.equals("completed") || status.equals("failed") || status.equals("cancelled"); }
 
     private void renderBotDetails() {
@@ -484,8 +518,11 @@ public final class MainActivity extends Activity {
         boolean online = isLiveBot(live);
         title(bot.optString("name", "Bot"), "بيانات Minecraft الحية عند الاتصال فقط");
         if (!online || !"bot_snapshot".equals(live.optString("type"))) {
+            String liveStatus = live == null ? "DISCONNECTED" : live.optString("status", "DISCONNECTED");
             empty("لا توجد لقطة عالم حية", "شغّل البوت وانتظر Spawn قبل طلب القياسات أو الأوامر.");
-            button(pageContent, "تشغيل جلسة Minecraft", true, () -> connectBot(selectedBotId));
+            if ("DEAD".equals(liveStatus)) button(pageContent, "طلب إعادة الظهور من Minecraft", true, () -> sendEngineCommand(command("respawn", selectedBotId)));
+            else if (isTransientStatus(liveStatus)) button(pageContent, "إيقاف جلسة Minecraft", false, () -> confirmDisconnectBot(selectedBotId));
+            else button(pageContent, "تشغيل جلسة Minecraft", true, () -> connectBot(selectedBotId));
         } else {
             LinearLayout metrics = card(SURFACE, GREEN);
             addObservedSnapshot(metrics, live);
@@ -549,13 +586,28 @@ public final class MainActivity extends Activity {
     private void showInventory(JSONObject snapshot) {
         section("المخزون المرصود");
         JSONArray items = snapshot.optJSONArray("inventory");
-        if (items == null || items.length() == 0) { empty("المخزون فارغ أو غير متاح", "لا نعرض عناصر لم تصل من بروتوكول Minecraft."); return; }
+        if (items == null) { empty("المخزون غير متاح", "لم تصل قائمة مخزون من لقطة Minecraft الحالية."); return; }
+        JSONArray slots = snapshot.optJSONArray("inventorySlots");
+        int occupiedSlots = 0;
+        if (slots != null) for (int i = 0; i < slots.length(); i++) if (slots.optJSONObject(i) != null && slots.optJSONObject(i).optInt("count", 0) > 0) occupiedSlots++;
         LinearLayout card = card(SURFACE, BLUE);
+        addText(card, "الخانات المستخدمة: " + occupiedSlots + "/36", 11, BLUE, true, 0, 8);
+        if (items.length() == 0) addText(card, "المخزون فارغ حسب آخر Snapshot.", 12, MUTED, false, 0, 6);
         for (int i = 0; i < items.length(); i++) {
             JSONObject item = items.optJSONObject(i);
             if (item != null) addText(card, item.optString("displayName", item.optString("name")) + " × " + item.optInt("count") + " · slot " + item.optInt("slot"), 12, TEXT, false, 0, 6);
         }
         pageContent.addView(card, margin(0, 0, 0, 14));
+        JSONArray equipment = snapshot.optJSONArray("equipmentSlots");
+        if (equipment != null) {
+            LinearLayout gear = card(SURFACE, PURPLE);
+            addText(gear, "التجهيز المرصود", 12, TEXT, true, 0, 7);
+            for (int i = 0; i < equipment.length(); i++) {
+                JSONObject item = equipment.optJSONObject(i);
+                if (item != null) addText(gear, "slot " + item.optInt("slot") + " · " + (item.isNull("name") ? "فارغ" : item.optString("displayName", item.optString("name"))), 11, MUTED, false, 0, 5);
+            }
+            pageContent.addView(gear, margin(0, 0, 0, 14));
+        }
     }
 
     private void showPlayers(JSONObject snapshot) {
@@ -589,22 +641,32 @@ public final class MainActivity extends Activity {
         JSONArray tasks = records("tasks");
         if (tasks.length() == 0) empty("لا توجد مهام محفوظة", "أنشئ جمع مورد محددًا؛ لا ندّعي تنفيذ أوامر غير مدعومة.");
         for (JSONObject task : sorted(tasks)) taskCard(task);
-        note("النسخة الحالية تنفّذ فقط جمع كتل ذات عنصر مطابق في المخزون؛ تخزين الصندوق وخطط البناء المعقدة غير مفعّلة.");
+        note("المحرك يقبل حاليًا الكتل التي تُظهر بيانات Minecraft إسقاط عنصر بالاسم نفسه، ضمن العالم المحمّل. الخام والـDrops المحوّلة، الصناديق، Crafting والبناء غير مفعّلة.");
     }
 
     private void taskCard(JSONObject task) {
         String id = task.optString("id", "");
         LinearLayout card = card(SURFACE, statusColor(task.optString("status", "pending")));
-        rowTitle(card, task.optString("name", task.optString("description", "Minecraft task")), task.optString("status", "pending"));
+        String taskStatus = task.optString("status", "pending");
+        rowTitle(card, task.optString("name", task.optString("description", "Minecraft task")), taskStatusLabel(taskStatus));
         addText(card, "البوت: " + botName(task.optString("botId", "")) + " · " + task.optString("blockName", ""), 12, MUTED, false, 0, 5);
-        addText(card, "التقدم المؤكد: " + task.optInt("progress", 0) + "%" + (task.has("verifiedCollected") ? " · عناصر " + task.optInt("verifiedCollected") : ""), 12, BLUE, false, 0, 10);
+        addText(card, "التقدم المؤكد من مخزون Minecraft: " + task.optInt("verifiedCollected", 0) + "/" + task.optInt("count", 0) + " · " + task.optInt("progress", 0) + "%", 12, BLUE, false, 0, 5);
+        String currentAction = task.optString("currentAction", "");
+        if (!currentAction.isEmpty()) addText(card, currentAction, 12, TEXT, false, 0, 5);
+        JSONObject currentTarget = task.optJSONObject("currentTarget");
+        if (currentTarget != null) addText(card, "موقع الهدف المرصود: " + formatPosition(currentTarget), 11, MUTED, false, 0, 5);
+        String lastReason = task.optString("lastReason", "");
+        if (!lastReason.isEmpty() && (task.optString("status", "").equals("failed") || task.optString("status", "").equals("interrupted")))
+            addText(card, lastReason, 11, AMBER, false, 0, 10);
         LinearLayout actions = new LinearLayout(this);
         actions.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
         String status = task.optString("status", "pending");
         if (status.equals("pending") || status.equals("failed") || status.equals("interrupted"))
             actions.addView(smallButton(status.equals("interrupted") ? "إعادة تشغيل" : "تشغيل", () -> startCollectTask(task), true), weightMargin());
         if (status.equals("running")) actions.addView(smallButton("إيقاف مؤقت", () -> taskCommand(task, "pause-task"), false), weightMargin());
-        if (status.equals("paused")) actions.addView(smallButton("استئناف", () -> taskCommand(task, "resume-task"), true), weightMargin());
+        if (status.equals("paused") && "USER_PAUSE".equals(task.optString("runtimePriority")))
+            actions.addView(smallButton("استئناف", () -> taskCommand(task, "resume-task"), true), weightMargin());
+        else if (status.equals("paused")) addText(card, "توقف بأولوية المحرك/البقاء؛ سيُستأنف فقط بعد تعافي الاتصال أو الحالة المرصودة.", 11, AMBER, false, 0, 8);
         if (status.equals("running") || status.equals("paused")) actions.addView(smallButton("إلغاء", () -> taskCommand(task, "cancel-task"), false), weightMargin());
         card.addView(actions);
         pageContent.addView(card, margin(0, 0, 0, 12));
@@ -622,7 +684,7 @@ public final class MainActivity extends Activity {
         botSpinner.setAdapter(adapter);
         LinearLayout form = form(block, count);
         addFormField(form, "ملف البوت", botSpinner);
-        addText(form, "المحرك سيبحث عن الكتلة في العالم المحمّل، يمشي إليها عبر pathfinder، ثم ينتظر زيادة المخزون الحقيقية.", 12, MUTED, false, 0, 0);
+        addText(form, "لا تبدأ المهمة حتى تحفظها وتضغط تشغيل. محرك الجمع يستخدم Mineflayer Pathfinder وTool ويُسجل التقدم فقط بعد زيادة العنصر في مخزون Minecraft.", 12, MUTED, false, 0, 0);
         new AlertDialog.Builder(this).setTitle("إنشاء مهمة جمع")
                 .setView(form)
                 .setNegativeButton("إلغاء", null)
@@ -651,8 +713,11 @@ public final class MainActivity extends Activity {
         JSONObject live = find("bot_states", botId);
         if (!isLiveBot(live)) { toast("لا يمكن تشغيل المهمة: لا توجد لقطة حديثة تؤكد اتصال Spawn."); return; }
         try {
-            JSONObject command = new JSONObject().put("action", "collect").put("botId", botId).put("taskId", task.optString("id"))
-                    .put("blockName", task.optString("blockName")).put("count", task.optInt("count"));
+            JSONObject arguments = new JSONObject().put("block_name", task.optString("blockName")).put("amount", task.optInt("count"));
+            JSONObject command = new JSONObject().put("action", "execute-tool").put("toolName", "collect_block")
+                    .put("arguments", arguments).put("botId", botId).put("taskId", task.optString("id"))
+                    .put("alreadyCollected", task.optInt("verifiedCollected", 0));
+            if (task.has("initialInventoryCount")) command.put("initialInventoryCount", task.optInt("initialInventoryCount"));
             sendEngineCommand(command);
         } catch (JSONException ignored) { toast("تعذر إنشاء أمر المهمة."); }
     }
@@ -837,7 +902,7 @@ public final class MainActivity extends Activity {
             }
             pageContent.addView(result, margin(0, 0, 0, 12));
         }
-        note("AI لا يملك أدوات مباشرة ولا يتصل بخادم Minecraft؛ مخرجاته محصورة في اقتراح collect أو unsupported.");
+        note("النموذج لا يرسل أوامر Minecraft مباشرة. بعد موافقتك يُحفظ اقتراح الجمع كـ Pending؛ وعند تشغيله يقبل المحرك أداة collect_block المسجلة فقط، مع تحقق المخزون الحقيقي.");
     }
 
     private void requestAiPlan(String prompt, JSONArray freeModels, String selectedModel) {
@@ -1214,7 +1279,7 @@ public final class MainActivity extends Activity {
     }
 
     private boolean isTransientStatus(String status) {
-        return "CONNECTING".equals(status) || "JOINING".equals(status) || "RECONNECTING".equals(status) || "DEAD".equals(status);
+        return "CONNECTING".equals(status) || "AUTHENTICATING".equals(status) || "JOINING".equals(status) || "RECONNECTING".equals(status) || "DEAD".equals(status);
     }
 
     private boolean isRecentBotTransition(JSONObject state) {
@@ -1234,7 +1299,7 @@ public final class MainActivity extends Activity {
         String normalized = String.valueOf(status).toUpperCase(java.util.Locale.ROOT);
         if (normalized.equals("ONLINE") || normalized.equals("COMPLETED") || normalized.startsWith("PING OK")) return GREEN;
         if (normalized.equals("FAILED") || normalized.equals("ERROR") || normalized.equals("PING FAILED")) return RED;
-        if (normalized.equals("CONNECTING") || normalized.equals("JOINING") || normalized.equals("RECONNECTING") || normalized.equals("RUNNING")) return AMBER;
+        if (normalized.equals("CONNECTING") || normalized.equals("AUTHENTICATING") || normalized.equals("JOINING") || normalized.equals("RECONNECTING") || normalized.equals("RUNNING")) return AMBER;
         if (normalized.equals("DEAD")) return RED;
         return MUTED;
     }
@@ -1243,6 +1308,7 @@ public final class MainActivity extends Activity {
         switch (String.valueOf(status).toUpperCase(java.util.Locale.ROOT)) {
             case "ONLINE": return "ONLINE";
             case "CONNECTING": return "CONNECTING";
+            case "AUTHENTICATING": return "AUTHENTICATING";
             case "JOINING": return "JOINING";
             case "RECONNECTING": return "RECONNECTING";
             case "DEAD": return "DEAD";
