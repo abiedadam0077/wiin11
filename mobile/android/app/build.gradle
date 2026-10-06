@@ -67,7 +67,7 @@ tasks.register('syncNodeProject', Sync) {
     }
     from(file('../../engine/node_modules')) {
         include '**/*'
-        exclude '**/.bin/**', '**/test/**', '**/tests/**', '**/example/**', '**/examples/**', '**/doc/**', '**/docs/**', '**/.github/**'
+        exclude '**/.bin/**', '**/test/**', '**/tests/**', '**/example/**', '**/examples/**', '**/doc/**', '**/docs/**', '**/sample/**', '**/samples/**', '**/.github/**'
         into 'nodejs-project/node_modules'
     }
     into "$buildDir/generated/node-assets"
