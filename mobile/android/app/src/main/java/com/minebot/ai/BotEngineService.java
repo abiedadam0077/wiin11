@@ -301,11 +301,11 @@ public final class BotEngineService extends Service {
         } catch (Exception error) {
             try {
                 JSONObject failure = new JSONObject().put("type", "bot_state").put("botId", botId).put("id", botId)
-                        .put("status", "FAILED").put("reason", "تعذر بدء الاتصال: " + safe(error)).put("at", System.currentTimeMillis());
+                        .put("status", "FAILED").put("reason", "تعذر بدء الاتصال: " + safe(error.getMessage())).put("at", System.currentTimeMillis());
                 database.upsert("bot_states", failure.toString());
                 persistLog(botId, failure);
                 emit("bot_state", failure);
-            } catch (JSONException ignored) { emit("command_result", error("تعذر بدء الاتصال: " + safe(error))); }
+            } catch (JSONException ignored) { emit("command_result", error("تعذر بدء الاتصال: " + safe(error.getMessage()))); }
         }
     }
 
