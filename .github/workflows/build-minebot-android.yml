@@ -78,9 +78,11 @@ jobs:
               tail -n 80 "$RUNNER_TEMP/gradle-build.log"
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
-            details="$(awk '/^FAILURE: Build failed with an exception\./ {capture=1} capture {print; if (++count == 18) exit}' "$RUNNER_TEMP/gradle-build.log" | tr '\n' ' ' | cut -c1-5000)"
-            if [[ -z "$details" ]]; then
-              details="$(grep -E '(^e: | error:|^Execution failed|^Could not|^FAILURE:|^\\* What went wrong)' "$RUNNER_TEMP/gradle-build.log" | tail -n 18 | tr '\n' ' ' | cut -c1-5000)"
+            compiler_details="$(grep -B 1 -A 4 -E 'error:| error:' "$RUNNER_TEMP/gradle-build.log" | tail -n 35 | tr '\n' ' ' | cut -c1-3500)"
+            failure_details="$(awk '/^FAILURE: Build failed with an exception\./ {capture=1} capture {print; if (++count == 12) exit}' "$RUNNER_TEMP/gradle-build.log" | tr '\n' ' ' | cut -c1-2000)"
+            details="$compiler_details $failure_details"
+            if [[ -z "$compiler_details" && -z "$failure_details" ]]; then
+              details="$(tail -n 25 "$RUNNER_TEMP/gradle-build.log" | tr '\n' ' ' | cut -c1-5000)"
             fi
             echo "::error title=Gradle build failure details::$details"
           fi
