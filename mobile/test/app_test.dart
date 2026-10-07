@@ -123,7 +123,7 @@ void main() {
     expect(find.text('Home'), findsOneWidget);
     expect(find.text('Bots'), findsOneWidget);
     expect(find.text('Tasks'), findsOneWidget);
-    expect(find.text('Servers'), findsOneWidget);
+    expect(find.text('Servers'), findsNWidgets(2));
     expect(find.text('Settings'), findsOneWidget);
     expect(find.text('0'), findsWidgets);
     expect(find.text('Online'), findsNothing);
