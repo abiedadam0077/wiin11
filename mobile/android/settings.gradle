@@ -24,10 +24,13 @@ plugins {
 }
 
 dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    // Flutter's Gradle plugin contributes its own Maven repository for engine artifacts.
+    // Prefer this centralized list instead of failing when the plugin declares it.
+    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
     repositories {
         google()
         mavenCentral()
+        maven { url "https://storage.googleapis.com/download.flutter.io" }
     }
 }
 
