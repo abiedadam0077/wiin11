@@ -73,7 +73,7 @@ class _GlassNavigationBar extends StatelessWidget {
     ];
     return SafeArea(
       top: false,
-      minimum: const EdgeInsetsDirectional.fromSTEB(12, 0, 12, 6),
+      minimum: const EdgeInsets.fromLTRB(12, 0, 12, 6),
       child: RepaintBoundary(
         child: ClipRRect(
           borderRadius: BorderRadius.circular(AppRadius.xl),

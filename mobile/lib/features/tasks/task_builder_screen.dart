@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/data/providers.dart';
 import '../../core/data/record_helpers.dart';
 import '../../core/theme/app_design_system.dart';
+import '../../core/widgets/async_view.dart';
 import '../../core/widgets/visuals.dart';
 import '../../l10n/generated/app_localizations.dart';
 

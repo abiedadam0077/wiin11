@@ -98,9 +98,9 @@ class _Slot extends StatelessWidget {
         padding: const EdgeInsets.all(AppSpacing.xs),
         child: Stack(
           children: <Widget>[
-            Align(alignment: Alignment.topStart, child: Text('${item['slot'] ?? ''}', style: AppTypography.micro.copyWith(fontSize: 8, letterSpacing: 0))),
+            Align(alignment: AlignmentDirectional.topStart, child: Text('${item['slot'] ?? ''}', style: AppTypography.micro.copyWith(fontSize: 8, letterSpacing: 0))),
             Center(child: empty ? Icon(Icons.crop_square_rounded, size: 21, color: AppColors.textMuted.withValues(alpha: .35)) : Column(mainAxisAlignment: MainAxisAlignment.center, children: <Widget>[const Icon(Icons.widgets_outlined, size: 19, color: AppColors.cyan), const SizedBox(height: 4), Text(name, style: AppTypography.micro.copyWith(fontSize: 8, letterSpacing: 0), maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center)])),
-            if (!empty) Align(alignment: Alignment.bottomEnd, child: DecoratedBox(decoration: BoxDecoration(color: AppColors.background, borderRadius: BorderRadius.circular(5)), child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2), child: Text('$count', style: AppTypography.micro.copyWith(color: AppColors.text, fontSize: 8, letterSpacing: 0))))),
+            if (!empty) Align(alignment: AlignmentDirectional.bottomEnd, child: DecoratedBox(decoration: BoxDecoration(color: AppColors.background, borderRadius: BorderRadius.circular(5)), child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2), child: Text('$count', style: AppTypography.micro.copyWith(color: AppColors.text, fontSize: 8, letterSpacing: 0))))),
           ],
         ),
       ),

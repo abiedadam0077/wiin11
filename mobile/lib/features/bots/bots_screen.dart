@@ -288,7 +288,8 @@ class BotProfileCard extends StatelessWidget {
     final String status = liveBotStatus(state);
     final ({String label, Color color, bool pulse}) appearance = statusPresentation(l10n, status);
     final bool live = isFreshSnapshot(state);
-    final String serverText = server == null ? l10n.notAvailable : '${server['name'] ?? ''} · ${server['host'] ?? ''}:${server['port'] ?? 25565}';
+    final JsonMap? currentServer = server;
+    final String serverText = currentServer == null ? l10n.notAvailable : '${currentServer['name'] ?? ''} · ${currentServer['host'] ?? ''}:${currentServer['port'] ?? 25565}';
     final String skinPath = valueText(skin?['filePath']);
     final int? ping = live ? finiteInt(state?['pingMs']) : null;
     return GlassPanel(
