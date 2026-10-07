@@ -6,7 +6,6 @@ import 'package:go_router/go_router.dart';
 import '../../core/data/providers.dart';
 import '../../core/theme/app_design_system.dart';
 import '../../core/widgets/visuals.dart';
-import '../../core/widgets/voxel_image.dart';
 import '../../l10n/generated/app_localizations.dart';
 
 class WelcomeScreen extends ConsumerWidget {

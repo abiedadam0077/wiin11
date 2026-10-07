@@ -180,7 +180,7 @@ class _TaskBuilderScreenState extends ConsumerState<TaskBuilderScreen> {
     setState(() => _saving = true);
     final String id = 'task-${DateTime.now().microsecondsSinceEpoch}';
     final int now = DateTime.now().millisecondsSinceEpoch;
-    final int count = parsedCount!;
+    final int count = parsedCount;
     final JsonMap task = <String, dynamic>{
       'id': id,
       'name': '${l10n.gathering}: ${count} × ${_block.text.trim()}',

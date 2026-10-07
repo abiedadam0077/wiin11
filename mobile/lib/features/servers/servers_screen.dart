@@ -79,7 +79,7 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
 
     return RefreshIndicator(
       color: AppColors.cyan,
-      onRefresh: () async { await ref.refresh(recordsProvider('servers').future); },
+      onRefresh: () => ref.refresh(recordsProvider('servers').future).then<void>((_) {}),
       child: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
         slivers: <Widget>[
