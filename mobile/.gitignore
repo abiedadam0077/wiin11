@@ -1,10 +1,21 @@
-node_modules/
-.data/
+# Flutter / Dart
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+coverage/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.metadata.tmp
+# Android generated runtime and build outputs
 android/.gradle/
 android/local.properties
 android/**/build/
-android/.idea/
-*.apk
-*.aab
+android/**/.idea/
 android/app/src/main/jniLibs/
 android/app/src/main/cpp/nodejs/include/
+# Node dependencies
+engine/node_modules/
+*.apk
+*.aab

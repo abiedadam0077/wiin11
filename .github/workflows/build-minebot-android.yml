@@ -1,4 +1,4 @@
-name: Build Native MineBot AI Android APK
+name: Test Flutter and build MineBot AI Android APK
 
 on:
   workflow_dispatch:
@@ -14,9 +14,9 @@ permissions:
 
 jobs:
   debug-apk:
-    name: Test and assemble Android APKs
+    name: Analyze Flutter, test native engine, and assemble APKs
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -26,6 +26,21 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Resolve Flutter dependencies and generate localizations
+        working-directory: mobile
+        run: |
+          flutter pub get
+          flutter gen-l10n
+          dart format lib test
+          flutter analyze
+          flutter test --reporter expanded
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -46,6 +61,16 @@ jobs:
           echo "ANDROID_HOME=$sdk_root" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$sdk_root" >> "$GITHUB_ENV"
           echo "$(dirname "$sdkmanager")" >> "$GITHUB_PATH"
+
+      - name: Configure Flutter and Android SDK paths for Gradle
+        shell: bash
+        run: |
+          {
+            echo "flutter.sdk=$FLUTTER_ROOT"
+            echo "sdk.dir=$ANDROID_HOME"
+            echo "flutter.versionCode=2"
+            echo "flutter.versionName=0.2.0"
+          } > mobile/android/local.properties
 
       - name: Accept Android SDK licenses
         run: yes | sdkmanager --licenses >/dev/null || true
@@ -136,11 +161,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           DEBUG_APK: mobile/android/app/build/outputs/apk/debug/app-debug.apk
           RELEASE_APK: mobile/android/app/build/outputs/apk/release/app-release.apk
-          RELEASE_TAG: minebot-ai-native-build-${{ github.run_number }}
+          RELEASE_TAG: minebot-ai-flutter-build-${{ github.run_number }}
         run: |
           gh release create "$RELEASE_TAG" "$RELEASE_APK" "$DEBUG_APK" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "MineBot AI 0.1.0 Native Android APK #${GITHUB_RUN_NUMBER}" \
-            --notes "Native Android build for commit ${GITHUB_SHA}. The Release APK is signed with the CI debug certificate for testing and is not a production or Play Store signature. Minecraft external-server login and device runtime still require separate verification." \
+            --title "MineBot AI 0.2.0 Flutter Android APK #${GITHUB_RUN_NUMBER}" \
+            --notes "Flutter/Dart Android build for commit ${GITHUB_SHA}. The Release APK is signed with the CI debug certificate for testing and is not a production or Play Store signature. Minecraft external-server login and device runtime still require separate verification." \
             --prerelease
