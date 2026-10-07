@@ -33,13 +33,12 @@ class _SkinManagerScreenState extends ConsumerState<SkinManagerScreen> {
     if (_importing) return;
     setState(() => _importing = true);
     try {
-      final FilePickerResult? result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: <String>['png'], allowMultiple: false, withData: false);
-      if (result == null || result.files.isEmpty) return;
-      final PlatformFile selected = result.files.single;
-      if (selected.size <= 0 || selected.size > 2 * 1024 * 1024 || selected.path == null) throw StateError(l10n.skinFileLimit);
-      final File source = File(selected.path!);
-      final Uint8List bytes = await source.readAsBytes();
-      if (bytes.length > 2 * 1024 * 1024) throw StateError(l10n.skinFileLimit);
+      final PlatformFile? selected = await FilePicker.pickFile(type: FileType.custom, allowedExtensions: <String>['png']);
+      if (selected == null) return;
+      final int? selectedLength = selected.lengthSync() ?? await selected.length();
+      if (selectedLength != null && (selectedLength <= 0 || selectedLength > 2 * 1024 * 1024)) throw StateError(l10n.skinFileLimit);
+      final Uint8List bytes = await selected.readAsBytes();
+      if (bytes.isEmpty || bytes.length > 2 * 1024 * 1024) throw StateError(l10n.skinFileLimit);
       final ui.Codec codec = await ui.instantiateImageCodec(bytes);
       final ui.FrameInfo frame = await codec.getNextFrame();
       final int width = frame.image.width;
