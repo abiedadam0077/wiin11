@@ -49,12 +49,14 @@ jobs:
             local code=$?
             if [[ $code -ne 0 ]]; then
               result=$code
+              local check_output
+              check_output="$(sed -E 's/\x1B\[[0-9;]*[[:alpha:]]//g' "$log_file" | awk -v marker="== $title ==" '$0 == marker {capture=1; next} capture {print}')"
               local diagnostics
-              diagnostics="$(sed -E 's/\x1B\[[0-9;]*[[:alpha:]]//g' "$log_file" | grep -E ' (error|warning) • ' | tail -n 100 || true)"
+              diagnostics="$(printf '%s\n' "$check_output" | grep -E '(error|warning) • ' | tail -n 100 || true)"
               if [[ -n "$diagnostics" ]]; then
                 local details="$(printf '%s\n' "$diagnostics" | tr '\n' ' ' | cut -c1-50000)"
               else
-                local details="$(sed -E 's/\x1B\[[0-9;]*[[:alpha:]]//g' "$log_file" | tail -n 1000 | tr '\n' ' ' | cut -c1-50000)"
+                local details="$(printf '%s\n' "$check_output" | tail -n 80 | tr '\n' ' ' | cut -c1-30000)"
               fi
               echo "::error title=Flutter check failed: $title::$details"
               return "$code"
