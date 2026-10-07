@@ -35,12 +35,14 @@ final class OpenRouterClient {
                 item.put("id", id)
                         .put("name", model.optString("name", id))
                         .put("contextLength", Math.max(0, model.optInt("context_length", 0)))
+                        .put("supportsTools", supportsToolCalls(model))
                         .put("description", model.optString("description", ""));
                 models.add(item);
             } catch (JSONException ignored) { }
         }
         models.sort(Comparator
-                .comparingInt((JSONObject model) -> model.optInt("contextLength", 0)).reversed()
+                .comparing((JSONObject model) -> model.optBoolean("supportsTools", false)).reversed()
+                .thenComparing(Comparator.comparingInt((JSONObject model) -> model.optInt("contextLength", 0)).reversed())
                 .thenComparing(model -> model.optString("id", "")));
         JSONArray result = new JSONArray();
         for (int i = 0; i < Math.min(models.size(), 50); i++) result.put(models.get(i));
@@ -76,23 +78,71 @@ final class OpenRouterClient {
     private JSONObject requestPlanForModel(String apiKey, String prompt, String model) throws Exception {
         JSONObject system = new JSONObject()
                 .put("role", "system")
-                .put("content", "أنت مخطط عالي المستوى فقط لتطبيق Minecraft Java. لا تدّع معرفة حالة العالم أو المخزون أو الاتصال. لا تنفّذ أوامر ولا تخترع أدوات. أعد JSON فقط بالشكل {\"action\":\"collect\",\"blockName\":\"oak_log\",\"count\":4,\"reason\":\"...\"} لمهمة جمع كتلة واحدة تعرف أن إسقاطها عنصر بالاسم نفسه مثل oak_log أو dirt أو sand، أو {\"action\":\"unsupported\",\"reason\":\"...\"} إذا لم يكن ذلك مؤكدًا أو كان الطلب متعدد الخطوات. لا تقترح خامات أو أوراقًا أو محاصيل تتطلب تحويلًا أو إسقاطًا مختلف الاسم. اسم الكتلة يكون أحرفًا لاتينية صغيرة وأرقامًا وشرطة سفلية، والعدد بين 1 و320.");
+                .put("content", "أنت مخطط عالي المستوى لتطبيق Minecraft Java فقط. لا تدّع معرفة العالم أو المخزون أو الاتصال ولا تنفّذ بنفسك. لديك وظيفة واحدة فقط اسمها collect_block مقدّمة من التطبيق؛ إذا كان طلب المستخدم يطابق جمع كتلة واحدة بكمية 1 إلى 320 وبمعرّف block_name صالح، استدعِ هذه الوظيفة مرة واحدة بالوسائط المحددة. لا تستدعِ أدوات أخرى ولا تضع أوامر داخل النص. إذا كان الطلب غير مدعوم، أو يحتاج خامًا ذا Drop مختلف أو صندوقًا أو تصنيعًا أو عدة خطوات، فأعد JSON فقط بالشكل {\"action\":\"unsupported\",\"reason\":\"...\"}. لا تفترض أن الكتلة موجودة أو أن التنفيذ سينجح؛ سيطلب التطبيق موافقة المستخدم ثم يتحقق Mineflayer من العالم والمخزون.");
         JSONObject user = new JSONObject().put("role", "user").put("content", prompt);
         JSONArray messages = new JSONArray().put(system).put(user);
         JSONObject body = new JSONObject()
                 .put("model", model)
                 .put("messages", messages)
+                .put("tools", new JSONArray().put(collectBlockTool()))
+                .put("tool_choice", "auto")
                 .put("temperature", 0.15)
                 .put("max_tokens", 350);
         JSONObject response = request("POST", API + "/chat/completions", apiKey, body, 12_000, 35_000);
         JSONArray choices = response.optJSONArray("choices");
         JSONObject first = choices == null ? null : choices.optJSONObject(0);
         JSONObject message = first == null ? null : first.optJSONObject("message");
-        String content = message == null ? "" : message.optString("content", "").trim();
-        JSONObject plan = parsePlan(content);
+        if (message == null) throw new IllegalStateException("لم يُرجع OpenRouter رسالة خطة صالحة.");
+        JSONObject plan;
+        JSONArray calls = message.optJSONArray("tool_calls");
+        if (calls != null && calls.length() > 0) {
+            if (calls.length() != 1) plan = unsupported("أعاد النموذج أكثر من Tool Call؛ رُفضت الخطة ولم يُرسل أمر.");
+            else {
+                JSONObject call = calls.optJSONObject(0);
+                JSONObject function = call == null ? null : call.optJSONObject("function");
+                String name = function == null ? "" : function.optString("name", "");
+                String arguments = function == null ? "" : function.optString("arguments", "");
+                plan = parseToolCall(name, arguments, message.optString("content", ""));
+            }
+        } else {
+            String content = message.optString("content", "").trim();
+            plan = parsePlan(content);
+        }
         plan.put("model", model);
         plan.put("createdAt", System.currentTimeMillis());
         return plan;
+    }
+
+    static JSONObject collectBlockTool() throws JSONException {
+        JSONObject properties = new JSONObject()
+                .put("block_name", new JSONObject().put("type", "string").put("pattern", "^[a-z0-9_]{1,64}$"))
+                .put("amount", new JSONObject().put("type", "integer").put("minimum", 1).put("maximum", 320));
+        JSONObject parameters = new JSONObject().put("type", "object").put("additionalProperties", false)
+                .put("properties", properties).put("required", new JSONArray().put("block_name").put("amount"));
+        JSONObject function = new JSONObject().put("name", "collect_block")
+                .put("description", "Propose a single bounded collection task. This is only a plan; the Android user must approve it before the local Minecraft Task Engine executes it.")
+                .put("parameters", parameters);
+        return new JSONObject().put("type", "function").put("function", function);
+    }
+
+    static JSONObject parseToolCall(String toolName, String rawArguments, String reason) throws Exception {
+        if (!"collect_block".equals(toolName)) return unsupported("طلب النموذج أداة غير مسجلة؛ لم يُنشأ أمر Minecraft.");
+        JSONObject arguments;
+        try { arguments = new JSONObject(rawArguments == null ? "" : rawArguments); }
+        catch (JSONException error) { throw new IllegalStateException("وسائط Tool Call ليست JSON صالحًا؛ لم يُنشأ أمر."); }
+        if (arguments.length() != 2 || !arguments.has("block_name") || !arguments.has("amount")) throw new IllegalStateException("وسائط collect_block لا تطابق المخطط المسموح؛ لم يُنشأ أمر.");
+        String block = arguments.optString("block_name", "").trim().toLowerCase(java.util.Locale.ROOT);
+        Object rawAmount = arguments.opt("amount");
+        if (!(rawAmount instanceof Number)) throw new IllegalStateException("الكمية ليست عددًا صحيحًا؛ لم يُنشأ أمر.");
+        double numeric = ((Number) rawAmount).doubleValue();
+        if (!Double.isFinite(numeric) || numeric != Math.rint(numeric) || numeric < 1 || numeric > 320) throw new IllegalStateException("الكمية خارج الحدود؛ لم يُنشأ أمر.");
+        if (!block.matches("[a-z0-9_]{1,64}")) throw new IllegalStateException("اسم الكتلة غير صالح؛ لم يُنشأ أمر.");
+        return new JSONObject().put("action", "collect").put("toolName", "collect_block")
+                .put("blockName", block).put("count", (int) numeric).put("reason", safe(reason));
+    }
+
+    private static JSONObject unsupported(String reason) throws JSONException {
+        return new JSONObject().put("action", "unsupported").put("reason", safe(reason));
     }
 
     static JSONObject parsePlan(String content) throws Exception {
@@ -114,8 +164,15 @@ final class OpenRouterClient {
         String block = raw.optString("blockName", "").trim().toLowerCase(java.util.Locale.ROOT);
         int count = raw.optInt("count", -1);
         if (!block.matches("[a-z0-9_]{1,64}") || count < 1 || count > 320) throw new IllegalStateException("رد النموذج لا يطابق حدود مهمة الجمع؛ لم يُنشأ أي أمر.");
-        plan.put("blockName", block).put("count", count);
+        plan.put("blockName", block).put("count", count).put("toolName", "collect_block");
         return plan;
+    }
+
+    private static boolean supportsToolCalls(JSONObject model) {
+        JSONArray supported = model.optJSONArray("supported_parameters");
+        if (supported == null) return false;
+        for (int i = 0; i < supported.length(); i++) if ("tools".equalsIgnoreCase(supported.optString(i, ""))) return true;
+        return false;
     }
 
     static boolean isFree(JSONObject model) {

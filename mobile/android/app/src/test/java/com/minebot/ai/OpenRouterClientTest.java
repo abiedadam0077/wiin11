@@ -30,10 +30,34 @@ public final class OpenRouterClientTest {
         assertFalse(unsupported.has("blockName"));
     }
 
+    @Test public void toolCallIsConstrainedToTheRegisteredCollectBlockHandler() throws Exception {
+        JSONObject plan = OpenRouterClient.parseToolCall("collect_block", "{\"block_name\":\"oak_log\",\"amount\":10}", "Collect nearby wood");
+        assertEquals("collect", plan.getString("action"));
+        assertEquals("collect_block", plan.getString("toolName"));
+        assertEquals("oak_log", plan.getString("blockName"));
+        assertEquals(10, plan.getInt("count"));
+
+        JSONObject unsupported = OpenRouterClient.parseToolCall("place_block", "{}", "Build a house");
+        assertEquals("unsupported", unsupported.getString("action"));
+        assertFalse(unsupported.has("toolName"));
+        assertInvalidTool("collect_block", "{\"block_name\":\"oak_log\",\"amount\":1,\"command\":\"/give\"}");
+        assertInvalidTool("collect_block", "{\"block_name\":\"oak_log\",\"amount\":1.5}");
+        assertInvalidTool("collect_block", "{\"block_name\":\"oak_log\",\"amount\":\"1\"}");
+    }
+
     @Test public void invalidModelTaskCannotBecomeExecutable() throws Exception {
         assertInvalid("{\"action\":\"collect\",\"blockName\":\"/give\",\"count\":1}");
         assertInvalid("{\"action\":\"collect\",\"blockName\":\"oak_log\",\"count\":321}");
         assertInvalid("Here is a plan: collect oak logs");
+    }
+
+    private static void assertInvalidTool(String name, String args) throws Exception {
+        try {
+            OpenRouterClient.parseToolCall(name, args, "test");
+            fail("Invalid OpenRouter tool arguments must be rejected.");
+        } catch (IllegalStateException expected) {
+            assertTrue(expected.getMessage().contains("لم يُنشأ") || expected.getMessage().contains("حدود") || expected.getMessage().contains("صحيح"));
+        }
     }
 
     private static void assertInvalid(String result) throws Exception {
