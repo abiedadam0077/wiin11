@@ -114,7 +114,7 @@ class _BotDetailsScreenState extends ConsumerState<BotDetailsScreen> {
               accent: badge.color,
               child: Row(
                 children: <Widget>[
-                  VoxelImage(path: valueText(skin?['filePath'], fallback: '') isEmpty ? null : valueText(skin?['filePath']), size: 62),
+                  VoxelImage(path: valueText(skin?['filePath'], fallback: '').isEmpty ? null : valueText(skin?['filePath']), size: 62),
                   const SizedBox(width: AppSpacing.sm),
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
