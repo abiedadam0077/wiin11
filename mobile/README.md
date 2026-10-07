@@ -53,8 +53,8 @@ gradle :app:assembleDebug :app:assembleRelease
 
 المخرجات المتوقعة:
 
-- `mobile/android/app/build/outputs/apk/debug/app-debug.apk`
-- `mobile/android/app/build/outputs/apk/release/app-release.apk` (موقّع بمفتاح debug في CI للاختبار فقط)
+- `mobile/build/app/outputs/apk/debug/app-debug.apk`
+- `mobile/build/app/outputs/apk/release/app-release.apk` (موقّع بمفتاح debug في CI للاختبار فقط)
 
 Build metadata: application ID `com.minebot.ai`; version `0.1.0` (`versionCode 1`); target/compile SDK `35`; minimum SDK `26`; ABIs `arm64-v8a` و`x86_64`.
 

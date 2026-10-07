@@ -196,16 +196,16 @@ jobs:
         with:
           name: minebot-ai-android-apks
           path: |
-            mobile/android/app/build/outputs/apk/debug/app-debug.apk
-            mobile/android/app/build/outputs/apk/release/app-release.apk
+            mobile/build/app/outputs/apk/debug/app-debug.apk
+            mobile/build/app/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
 
       - name: Publish downloadable Android APKs
         env:
           GH_TOKEN: ${{ github.token }}
-          DEBUG_APK: mobile/android/app/build/outputs/apk/debug/app-debug.apk
-          RELEASE_APK: mobile/android/app/build/outputs/apk/release/app-release.apk
+          DEBUG_APK: mobile/build/app/outputs/apk/debug/app-debug.apk
+          RELEASE_APK: mobile/build/app/outputs/apk/release/app-release.apk
           RELEASE_TAG: minebot-ai-flutter-build-${{ github.run_number }}
         run: |
           gh release create "$RELEASE_TAG" "$RELEASE_APK" "$DEBUG_APK" \
