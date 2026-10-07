@@ -65,6 +65,7 @@ class DashboardScreen extends ConsumerWidget {
                       children: <Widget>[
                         Text(l10n.greeting, style: AppTypography.label),
                         Text(l10n.appName, style: AppTypography.title),
+                        Text(l10n.dashboardSubtitle, style: AppTypography.label, maxLines: 1, overflow: TextOverflow.ellipsis),
                       ],
                     ),
                   ),

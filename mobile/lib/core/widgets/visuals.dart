@@ -184,7 +184,20 @@ class ScreenHeader extends StatelessWidget {
                 ],
               ),
             ),
-            if (trailing != null) ...<Widget>[const SizedBox(width: AppSpacing.sm), trailing!],
+            if (trailing != null) ...<Widget>[
+              const SizedBox(width: AppSpacing.sm),
+              Flexible(
+                fit: FlexFit.loose,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 132),
+                  child: FittedBox(
+                    alignment: AlignmentDirectional.centerEnd,
+                    fit: BoxFit.scaleDown,
+                    child: trailing!,
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       );
