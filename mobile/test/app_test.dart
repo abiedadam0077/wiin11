@@ -202,7 +202,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(pickerButton);
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField).last, 'minecraft:stone');
+    await tester.enterText(find.byKey(const ValueKey<String>('block-picker-search')), 'minecraft:stone');
     await tester.pumpAndSettle();
     expect(find.text('Stone'), findsOneWidget);
     expect(find.text('minecraft:stone'), findsWidgets);

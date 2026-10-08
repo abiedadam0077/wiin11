@@ -60,6 +60,7 @@ class _BlockPickerSheetState extends State<BlockPickerSheet> {
               Padding(
                 padding: const EdgeInsetsDirectional.symmetric(horizontal: AppSpacing.page),
                 child: TextField(
+                  key: const ValueKey<String>('block-picker-search'),
                   controller: _search,
                   autofocus: true,
                   textCapitalization: TextCapitalization.none,
