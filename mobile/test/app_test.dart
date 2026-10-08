@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:minebot_ai/app.dart';
+import 'package:minebot_ai/core/data/minecraft_collect_catalog.dart';
 import 'package:minebot_ai/core/data/providers.dart';
 import 'package:minebot_ai/core/data/record_helpers.dart';
 import 'package:minebot_ai/core/localization/locale_provider.dart';
@@ -186,6 +187,8 @@ void main() {
   });
 
   testWidgets('block picker searches real 1.21.4 metadata and shows the different stone drop', (WidgetTester tester) async {
+    final List<MinecraftBlockOption> catalog = await MinecraftCollectCatalog.load();
+    expect(catalog.any((MinecraftBlockOption option) => option.blockId == 'minecraft:stone' && option.outputItemId == 'cobblestone'), isTrue);
     final _FakePlatform platform = _FakePlatform();
     platform.tables['bots'] = <JsonMap>[<String, dynamic>{'id': 'bot-1', 'name': 'Miner'}];
     _setPhoneSize(tester);
@@ -202,7 +205,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(pickerButton);
     await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const ValueKey<String>('block-picker-search')), 'minecraft:stone');
+    final Finder catalogSearch = find.byKey(const ValueKey<String>('block-picker-search'));
+    expect(catalogSearch, findsOneWidget);
+    await tester.enterText(catalogSearch, 'minecraft:stone');
     await tester.pumpAndSettle();
     expect(find.text('Stone'), findsOneWidget);
     expect(find.text('minecraft:stone'), findsWidgets);
