@@ -1,6 +1,6 @@
 # MineBot AI — Flutter/Dart + Minecraft Java engine
 
-تطبيق Android بواجهة Flutter/Dart حقيقية، وجسر Android أصلي محدود لخدمة foreground/SQLite/Keystore ومحرك Mineflayer عبر Node.js Mobile/JNI؛ لا يستخدم WebView أو HTML wrapper. يوضح [mobile/README.md](mobile/README.md) الوظائف المتصلة فعليًا والحدود والاختبارات. سجل APK الأقدم [native build #13](https://github.com/abiedadam0077/wiin11/releases/tag/minebot-ai-native-build-13) يخص إصدار Java UI سابقًا ولا يطابق Flutter الحالي. لا تُعد اختبارًا لاتصال Minecraft حي أو تشغيل JNI على هاتف؛ رابط APK المطابق للكود الحالي سيضاف بعد نجاح workflow لهذا التغيير.
+تطبيق Android بواجهة Flutter/Dart حقيقية، وجسر Android أصلي محدود لخدمة foreground/SQLite/Keystore ومحرك Mineflayer عبر Node.js Mobile/JNI؛ لا يستخدم WebView أو HTML wrapper. نجح [GitHub Actions run #41](https://github.com/abiedadam0077/wiin11/actions/runs/37783355993) للـcommit `628529e` وشغّل Flutter/Node/Robolectric tests وبنى نسختي Android. [تنزيل app-release.apk مباشرة](https://github.com/abiedadam0077/wiin11/releases/download/minebot-ai-flutter-build-41/app-release.apk) (230,611,964 بايت) أو افتح [الإصدار #41](https://github.com/abiedadam0077/wiin11/releases/tag/minebot-ai-flutter-build-41). توقيع APK تجريبي بشهادة debug وليس Play Store؛ نجاح CI لا يثبت اتصال Minecraft حيًا أو اختبار التطبيق على هاتف.
 
 
 ---
