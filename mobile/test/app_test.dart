@@ -192,15 +192,23 @@ void main() {
     await tester.pumpWidget(_app(platform: platform, initialLocation: '/tasks/create'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Continue'));
+    final Finder continueButton = find.text('Continue');
+    await tester.ensureVisible(continueButton);
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Choose a block'));
+    await tester.tap(continueButton);
+    await tester.pumpAndSettle();
+    final Finder pickerButton = find.byTooltip('Choose a block');
+    await tester.ensureVisible(pickerButton);
+    await tester.pumpAndSettle();
+    await tester.tap(pickerButton);
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).last, 'minecraft:stone');
     await tester.pumpAndSettle();
     expect(find.text('Stone'), findsOneWidget);
     expect(find.text('minecraft:stone'), findsWidgets);
-    await tester.tap(find.text('Stone'));
+    final Finder stoneOption = find.text('Stone');
+    await tester.ensureVisible(stoneOption);
+    await tester.tap(stoneOption);
     await tester.pumpAndSettle();
     expect(find.textContaining('cobblestone'), findsWidgets);
   });
