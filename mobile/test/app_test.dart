@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:minebot_ai/app.dart';
+import 'package:minebot_ai/core/data/minecraft_collect_catalog.dart';
 import 'package:minebot_ai/core/data/providers.dart';
 import 'package:minebot_ai/core/data/record_helpers.dart';
 import 'package:minebot_ai/core/localization/locale_provider.dart';
