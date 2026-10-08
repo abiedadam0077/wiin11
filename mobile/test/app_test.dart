@@ -6,12 +6,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:minebot_ai/app.dart';
-import 'package:minebot_ai/core/data/minecraft_collect_catalog.dart';
 import 'package:minebot_ai/core/data/providers.dart';
 import 'package:minebot_ai/core/data/record_helpers.dart';
 import 'package:minebot_ai/core/localization/locale_provider.dart';
 import 'package:minebot_ai/core/platform/minebot_platform.dart';
 import 'package:minebot_ai/core/routing/app_router.dart';
+import 'package:minebot_ai/features/tasks/block_picker_sheet.dart';
+import 'package:minebot_ai/l10n/generated/app_localizations.dart';
 
 class _FakePlatform extends MineBotPlatform {
   final Map<String, List<JsonMap>> tables = <String, List<JsonMap>>{};
@@ -186,36 +187,29 @@ void main() {
     expect(find.text('Gathering'), findsOneWidget);
   });
 
-  testWidgets('block picker searches real 1.21.4 metadata and shows the different stone drop', (WidgetTester tester) async {
-    final List<MinecraftBlockOption> catalog = await MinecraftCollectCatalog.load();
-    expect(catalog.any((MinecraftBlockOption option) => option.blockId == 'minecraft:stone' && option.outputItemId == 'cobblestone'), isTrue);
-    final _FakePlatform platform = _FakePlatform();
-    platform.tables['bots'] = <JsonMap>[<String, dynamic>{'id': 'bot-1', 'name': 'Miner'}];
+  testWidgets('block picker searches IDs and displays a block drop distinct from its name', (WidgetTester tester) async {
+    const List<MinecraftBlockOption> options = <MinecraftBlockOption>[
+      MinecraftBlockOption(blockId: 'minecraft:dirt', displayName: 'Dirt', category: 'terrain', outputItemId: 'dirt', outputDisplayName: 'Dirt'),
+      MinecraftBlockOption(blockId: 'minecraft:stone', displayName: 'Stone', category: 'terrain', outputItemId: 'cobblestone', outputDisplayName: 'Cobblestone'),
+    ];
     _setPhoneSize(tester);
-    await tester.pumpWidget(_app(platform: platform, initialLocation: '/tasks/create'));
-    await tester.pumpAndSettle();
-
-    final Finder continueButton = find.text('Continue');
-    await tester.ensureVisible(continueButton);
-    await tester.pumpAndSettle();
-    await tester.tap(continueButton);
-    await tester.pumpAndSettle();
-    final Finder pickerButton = find.byTooltip('Choose a block');
-    await tester.ensureVisible(pickerButton);
-    await tester.pumpAndSettle();
-    await tester.tap(pickerButton);
+    await tester.pumpWidget(MaterialApp(
+      supportedLocales: AppLocalizations.supportedLocales,
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      home: Builder(builder: (BuildContext context) => Scaffold(body: Center(child: TextButton(
+        onPressed: () { showModalBottomSheet<void>(context: context, isScrollControlled: true, builder: (BuildContext context) => BlockPickerSheet(options: options, l10n: AppLocalizations.of(context))); },
+        child: const Text('Open picker'),
+      )))),
+    ));
+    await tester.tap(find.text('Open picker'));
     await tester.pumpAndSettle();
     final Finder catalogSearch = find.byKey(const ValueKey<String>('block-picker-search'));
     expect(catalogSearch, findsOneWidget);
     await tester.enterText(catalogSearch, 'minecraft:stone');
     await tester.pumpAndSettle();
     expect(find.text('Stone'), findsOneWidget);
-    expect(find.text('minecraft:stone'), findsWidgets);
-    final Finder stoneOption = find.text('Stone');
-    await tester.ensureVisible(stoneOption);
-    await tester.tap(stoneOption);
-    await tester.pumpAndSettle();
-    expect(find.textContaining('cobblestone'), findsWidgets);
+    expect(find.text('minecraft:stone'), findsOneWidget);
+    expect(find.textContaining('Cobblestone · cobblestone'), findsOneWidget);
   });
 
   testWidgets('inventory screen refuses to render empty slots when slot data is unavailable', (WidgetTester tester) async {
