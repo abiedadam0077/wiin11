@@ -209,7 +209,7 @@ void main() {
     await tester.enterText(catalogSearch, 'minecraft:stone');
     await tester.pumpAndSettle();
     expect(find.text('Stone'), findsOneWidget);
-    expect(find.text('minecraft:stone'), findsOneWidget);
+    expect(find.text('minecraft:stone'), findsNWidgets(2));
     expect(find.textContaining('Cobblestone · cobblestone'), findsOneWidget);
   });
 
