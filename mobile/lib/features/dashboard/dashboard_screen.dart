@@ -22,7 +22,7 @@ class DashboardScreen extends ConsumerWidget {
     final List<JsonMap> logs = ref.watch(recordsProvider('logs')).valueOrNull ?? const <JsonMap>[];
     final JsonMap? engine = ref.watch(engineStatusProvider).valueOrNull;
     final int online = states.where((JsonMap row) => isFreshSnapshot(row)).length;
-    final int active = tasks.where((JsonMap row) => <String>{'running', 'paused'}.contains((row['status'] ?? '').toString().toLowerCase())).length;
+    final int active = tasks.where((JsonMap row) => <String>{'running', 'paused', 'inventory_full'}.contains((row['status'] ?? '').toString().toLowerCase())).length;
     final String engineState = (engine?['status'] ?? 'STOPPED').toString();
     final ({String label, Color color, bool pulse}) engineStatus = switch (engineState) {
       'READY' => (label: l10n.engineReady, color: AppColors.green, pulse: true),
@@ -34,7 +34,7 @@ class DashboardScreen extends ConsumerWidget {
     final JsonMap? currentBot = currentBotState == null
         ? null
         : bots.where((JsonMap row) => row['id'] == currentBotState['botId'] || row['id'] == currentBotState['id']).cast<JsonMap?>().firstOrNull;
-    final JsonMap? currentTask = tasks.where((JsonMap row) => row['status'] == 'running').cast<JsonMap?>().firstOrNull;
+    final JsonMap? currentTask = tasks.where((JsonMap row) => <String>{'running', 'paused', 'inventory_full'}.contains((row['status'] ?? '').toString().toLowerCase())).cast<JsonMap?>().firstOrNull;
     final List<JsonMap> recent = List<JsonMap>.from(logs)..sort((JsonMap a, JsonMap b) => timestampMillis(b, 'createdAt').compareTo(timestampMillis(a, 'createdAt')));
 
     return RefreshIndicator(
@@ -171,7 +171,10 @@ class DashboardScreen extends ConsumerWidget {
                     children: <Widget>[
                       const Icon(Icons.route_rounded, color: AppColors.cyan),
                       const SizedBox(width: AppSpacing.sm),
-                      Expanded(child: Text(valueText(currentTask['name'], fallback: l10n.currentTask), style: AppTypography.title, maxLines: 1, overflow: TextOverflow.ellipsis)),
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+                        Text(valueText(currentTask['name'], fallback: l10n.currentTask), style: AppTypography.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                        if (valueText(currentTask['currentAction']).isNotEmpty) Text(valueText(currentTask['currentAction']), style: AppTypography.micro.copyWith(fontSize: 9, letterSpacing: 0), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      ])),
                       Text('${finiteInt(currentTask['progress']) ?? 0}%', style: AppTypography.title.copyWith(color: AppColors.cyan)),
                     ],
                   ),

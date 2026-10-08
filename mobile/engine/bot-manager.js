@@ -42,6 +42,13 @@ function finitePosition(position) {
   return { x: Number(position.x), y: Number(position.y), z: Number(position.z) };
 }
 
+function isPermanentKick(reason) {
+  let text = '';
+  try { text = typeof reason === 'string' ? reason : JSON.stringify(reason); }
+  catch { text = String(reason || ''); }
+  return /whitelist|not\s+white.?listed|ban(?:ned)?|invalid\s+(?:session|token|credentials)|authentication\s+(?:failed|error)|failed\s+to\s+verify|outdated\s+(?:client|server)|incompatible\s+(?:client|server)|unsupported\s+protocol|premium\s+account|required|already\s+connected|duplicate\s+login/i.test(text);
+}
+
 class BotManager extends EventEmitter {
   constructor({ mineflayer, pathfinder, minecraftData, authCacheDir, autoEat, collectBlock }) {
     super();
@@ -227,9 +234,15 @@ class BotManager extends EventEmitter {
     bot.on('kicked', (reason) => {
       if (!isCurrentSession()) return;
       state.lastError = safeError(typeof reason === 'string' ? reason : JSON.stringify(reason));
-      state.permanentKick = true;
-      state.status = 'FAILED';
-      this.emitEvent('bot_state', botId, { status: 'FAILED', reason: state.lastError, retryable: false });
+      state.permanentKick = isPermanentKick(reason);
+      state.status = state.permanentKick ? 'FAILED' : 'RECONNECTING';
+      this.emitEvent('bot_state', botId, {
+        status: state.status,
+        reason: state.lastError,
+        detail: state.permanentKick ? 'رفض Minecraft الجلسة بسبب سبب يحتاج تدخل المستخدم.' : 'أغلق Minecraft الجلسة؛ ستبدأ إعادة اتصال متدرجة بعد حدث end.',
+        retryable: !state.permanentKick,
+        kickReason: true,
+      });
     });
     bot.on('error', (error) => {
       if (!isCurrentSession()) return;
@@ -304,28 +317,39 @@ class BotManager extends EventEmitter {
     if (!force && now - state.lastSnapshotAt < 2500) return;
     state.lastSnapshotAt = now;
     const position = finitePosition(bot.entity?.position);
-    const inventory = bot.inventory?.items?.().map((item) => ({
+    const mcData = this.minecraftData(bot.version);
+    const inventoryAvailable = Array.isArray(bot.inventory?.slots) && typeof bot.inventory?.items === 'function';
+    const inventory = inventoryAvailable ? bot.inventory.items().map((item) => ({
       name: String(item.name || 'unknown'),
-      displayName: String(item.displayName || item.name || 'unknown').slice(0, 80),
+      displayName: String(item.displayName || mcData.itemsByName?.[item.name]?.displayName || item.name || 'unknown').slice(0, 80),
       count: Number(item.count) || 0,
       slot: Number(item.slot),
       type: Number(item.type),
-    })) || [];
-    const inventorySlots = Array.from({ length: 36 }, (_, index) => {
+      maxStackSize: Number(mcData.itemsByName?.[item.name]?.stackSize) || 64,
+    })) : null;
+    const inventorySlots = inventoryAvailable ? Array.from({ length: 36 }, (_, index) => {
       const slot = index + 9;
       const item = bot.inventory?.slots?.[slot];
       return item ? {
         slot,
         name: String(item.name || 'unknown'),
-        displayName: String(item.displayName || item.name || 'unknown').slice(0, 48),
+        displayName: String(item.displayName || mcData.itemsByName?.[item.name]?.displayName || item.name || 'unknown').slice(0, 48),
         count: Number(item.count) || 0,
-      } : { slot, name: null, displayName: null, count: 0 };
-    });
-    const equipmentSlots = [5, 6, 7, 8, 45].map((slot) => {
+        type: Number(item.type),
+        maxStackSize: Number(mcData.itemsByName?.[item.name]?.stackSize) || 64,
+      } : { slot, name: null, displayName: null, count: 0, type: null, maxStackSize: null };
+    }) : null;
+    const equipmentSlots = inventoryAvailable ? [5, 6, 7, 8, 45].map((slot) => {
       const item = bot.inventory?.slots?.[slot];
-      return item ? { slot, name: String(item.name || 'unknown'), displayName: String(item.displayName || item.name || 'unknown').slice(0, 48), count: Number(item.count) || 0 }
-        : { slot, name: null, displayName: null, count: 0 };
-    });
+      return item ? {
+        slot,
+        name: String(item.name || 'unknown'),
+        displayName: String(item.displayName || mcData.itemsByName?.[item.name]?.displayName || item.name || 'unknown').slice(0, 48),
+        count: Number(item.count) || 0,
+        type: Number(item.type),
+        maxStackSize: Number(mcData.itemsByName?.[item.name]?.stackSize) || 64,
+      } : { slot, name: null, displayName: null, count: 0, type: null, maxStackSize: null };
+    }) : null;
     const players = Object.values(bot.players || {}).map((player) => ({
       username: String(player.username || '').slice(0, 32),
       position: finitePosition(player.entity?.position),
@@ -336,8 +360,31 @@ class BotManager extends EventEmitter {
       .slice(0, 150)
       .map((entity) => this.entityRecord(entity))
       .filter(Boolean);
+    let lookTarget = null;
+    try {
+      const lookedAt = bot.blockAtCursor?.(12);
+      if (lookedAt?.name && lookedAt.position) {
+        lookTarget = {
+          kind: 'block',
+          name: `minecraft:${String(lookedAt.name)}`,
+          position: finitePosition(lookedAt.position),
+          distance: Number.isFinite(lookedAt.position.distanceTo?.(bot.entity.position))
+            ? Number(lookedAt.position.distanceTo(bot.entity.position)) : null,
+        };
+      } else {
+        const entity = bot.entityAtCursor?.(12);
+        if (entity?.position) lookTarget = {
+          kind: entity.username ? 'player' : 'entity',
+          name: String(entity.username || entity.name || entity.type || 'entity').slice(0, 48),
+          position: finitePosition(entity.position),
+          distance: Number.isFinite(entity.position.distanceTo?.(bot.entity.position))
+            ? Number(entity.position.distanceTo(bot.entity.position)) : null,
+        };
+      }
+    } catch { /* A missing or unloaded ray target is represented as null, not guessed. */ }
     this.emitEvent('bot_snapshot', botId, {
       status: state.status,
+      version: String(bot.version || ''),
       health: Number.isFinite(bot.health) ? Number(bot.health) : null,
       food: Number.isFinite(bot.food) ? Number(bot.food) : null,
       saturation: Number.isFinite(bot.foodSaturation) ? Number(bot.foodSaturation) : null,
@@ -345,23 +392,30 @@ class BotManager extends EventEmitter {
       position,
       yaw: Number.isFinite(bot.entity?.yaw) ? Number(bot.entity.yaw) : null,
       pitch: Number.isFinite(bot.entity?.pitch) ? Number(bot.entity.pitch) : null,
+      lookTarget,
       dimension: bot.game?.dimension || null,
       gameMode: bot.game?.gameMode || null,
       difficulty: bot.game?.difficulty ?? null,
       pingMs: Number.isFinite(bot.players?.[bot.username]?.ping) ? Number(bot.players[bot.username].ping) : null,
       onlineSince: state.spawnedAt || null,
       uptimeMs: state.spawnedAt > 0 ? Math.max(0, now - state.spawnedAt) : null,
+      inventoryAvailable,
       inventory,
       inventorySlots,
       equipmentSlots,
+      selectedHotbarSlot: Number.isInteger(bot.quickBarSlot) && bot.quickBarSlot >= 0 && bot.quickBarSlot <= 8 ? bot.quickBarSlot : null,
       currentTask: state.task ? {
         id: state.task.id,
         type: state.task.type,
-        blockName: state.task.blockName,
+        blockName: state.task.namespacedBlockName || `minecraft:${state.task.blockName}`,
+        outputItemName: state.task.outputItemName,
         count: state.task.count,
         verifiedCollected: state.task.collected,
         progress: Math.floor((state.task.collected / state.task.count) * 100),
-        status: state.task.paused ? 'PAUSED' : 'RUNNING',
+        status: state.task.stage === 'INVENTORY_FULL' ? 'INVENTORY_FULL' : state.task.paused ? 'PAUSED' : 'RUNNING',
+        stage: state.task.stage || 'RUNNING',
+        startedAt: state.task.startedAt || null,
+        durationMs: state.task.startedAt ? Math.max(0, now - state.task.startedAt) : null,
         currentAction: state.task.currentAction || null,
       } : null,
       players,
@@ -564,4 +618,4 @@ class BotManager extends EventEmitter {
 
 }
 
-module.exports = { BotManager, CONTROL_STATES, AUTH_MODES, validateBotConfig, safeError, finitePosition };
+module.exports = { BotManager, CONTROL_STATES, AUTH_MODES, validateBotConfig, safeError, finitePosition, isPermanentKick };

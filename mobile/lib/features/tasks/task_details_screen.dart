@@ -9,7 +9,7 @@ import '../../core/theme/app_design_system.dart';
 import '../../core/widgets/async_view.dart';
 import '../../core/widgets/visuals.dart';
 import '../../l10n/generated/app_localizations.dart';
-import 'tasks_screen.dart' show taskPresentation;
+import 'tasks_screen.dart' show taskPresentation, taskStageLabel;
 
 class TaskDetailsScreen extends ConsumerWidget {
   const TaskDetailsScreen({super.key, required this.taskId});
@@ -31,7 +31,10 @@ class TaskDetailsScreen extends ConsumerWidget {
     final JsonMap? state = states.where((JsonMap row) => (row['botId'] ?? row['id']) == task['botId']).firstOrNull;
     final bool live = isFreshSnapshot(state);
     final String status = valueText(task['status'], fallback: 'pending').toLowerCase();
-    final ({String label, Color color, bool pulse}) badge = taskPresentation(l10n, status);
+    final bool inventoryFull = valueText(task['stage']).toUpperCase() == 'INVENTORY_FULL';
+    final ({String label, Color color, bool pulse}) badge = inventoryFull
+        ? (label: l10n.stageInventoryFull, color: AppColors.amber, pulse: false)
+        : taskPresentation(l10n, status);
     final int progress = (finiteInt(task['progress']) ?? 0).clamp(0, 100).toInt();
     final int count = finiteInt(task['count']) ?? 0;
     final int verified = finiteInt(task['verifiedCollected']) ?? 0;
@@ -54,17 +57,21 @@ class TaskDetailsScreen extends ConsumerWidget {
               _DetailRow(label: l10n.assignedBot, value: valueText(bot?['name'], fallback: valueText(task['botId'], fallback: l10n.notAvailable))),
               _DetailRow(label: l10n.stepCategory, value: valueText(task['type'], fallback: l10n.notAvailable)),
               if (valueText(task['blockName']).isNotEmpty) _DetailRow(label: l10n.selectBlock, value: valueText(task['blockName'])),
+              if (valueText(task['outputItemName']).isNotEmpty) _DetailRow(label: l10n.outputItem, value: valueText(task['outputItemName'])),
               if (task['count'] != null) _DetailRow(label: l10n.quantity, value: '$count'),
               _DetailRow(label: l10n.confirmedItems, value: '$verified${count > 0 ? ' / $count' : ''}'),
+              _DetailRow(label: l10n.taskDuration, value: formatDuration(task['durationMs'])),
+              if (valueText(task['stage']).isNotEmpty) _DetailRow(label: l10n.taskStage, value: taskStageLabel(l10n, task['stage'])),
+              if (task['startedAt'] != null) _DetailRow(label: l10n.taskStartedAt, value: DateTime.fromMillisecondsSinceEpoch(finiteInt(task['startedAt']) ?? 0).toLocal().toString()),
               const SizedBox(height: AppSpacing.xs),
               ClipRRect(borderRadius: BorderRadius.circular(AppRadius.pill), child: LinearProgressIndicator(value: progress / 100, minHeight: 7, color: badge.color, backgroundColor: AppColors.surfaceRaised)),
               const SizedBox(height: AppSpacing.xs),
               Align(alignment: AlignmentDirectional.centerEnd, child: Text('$progress%', style: AppTypography.title.copyWith(color: badge.color))),
-              if (status == 'running' || status == 'paused') ...<Widget>[
+              if (<String>{'running', 'paused', 'inventory_full'}.contains(status)) ...<Widget>[
                 const Divider(height: AppSpacing.lg),
                 Text(valueText(task['currentAction'], fallback: l10n.currentAction), style: AppTypography.body.copyWith(color: AppColors.cyan)),
               ],
-              if (<String>{'failed', 'interrupted'}.contains(status) && valueText(task['lastReason']).isNotEmpty) ...<Widget>[
+              if (<String>{'failed', 'interrupted', 'paused', 'inventory_full'}.contains(status) && valueText(task['lastReason']).isNotEmpty) ...<Widget>[
                 const SizedBox(height: AppSpacing.sm),
                 Text(valueText(task['lastReason']), style: AppTypography.body.copyWith(color: AppColors.amber)),
               ],
@@ -79,8 +86,8 @@ class TaskDetailsScreen extends ConsumerWidget {
             child: Wrap(spacing: AppSpacing.xs, runSpacing: AppSpacing.xs, children: <Widget>[
               if (<String>{'pending', 'failed', 'interrupted'}.contains(status)) OutlinedButton.icon(onPressed: live ? () => _send(context, ref, <String, dynamic>{'action': 'execute-tool', 'toolName': 'collect_block', 'botId': task['botId'], 'taskId': taskId, 'arguments': <String, dynamic>{'block_name': task['blockName'], 'amount': count}, 'alreadyCollected': verified, if (task['initialInventoryCount'] != null) 'initialInventoryCount': task['initialInventoryCount']}) : null, icon: const Icon(Icons.play_arrow_rounded), label: Text(l10n.start)),
               if (status == 'running') OutlinedButton.icon(onPressed: () => _send(context, ref, <String, dynamic>{'action': 'pause-task', 'botId': task['botId'], 'taskId': taskId}), icon: const Icon(Icons.pause_rounded), label: Text(l10n.pause)),
-              if (status == 'paused' && valueText(task['runtimePriority']) == 'USER_PAUSE') OutlinedButton.icon(onPressed: live ? () => _send(context, ref, <String, dynamic>{'action': 'resume-task', 'botId': task['botId'], 'taskId': taskId}) : null, icon: const Icon(Icons.play_arrow_rounded), label: Text(l10n.resume)),
-              if (<String>{'running', 'paused'}.contains(status)) OutlinedButton.icon(onPressed: () => _confirmCancel(context, ref, task, l10n), icon: const Icon(Icons.cancel_outlined), label: Text(l10n.cancelTask)),
+              if (<String>{'paused', 'inventory_full'}.contains(status) && <String>{'USER_PAUSE', 'INVENTORY_FULL'}.contains(valueText(task['runtimePriority']))) OutlinedButton.icon(onPressed: live ? () => _send(context, ref, <String, dynamic>{'action': 'resume-task', 'botId': task['botId'], 'taskId': taskId}) : null, icon: const Icon(Icons.play_arrow_rounded), label: Text(l10n.resume)),
+              if (<String>{'running', 'paused', 'inventory_full'}.contains(status)) OutlinedButton.icon(onPressed: () => _confirmCancel(context, ref, task, l10n), icon: const Icon(Icons.cancel_outlined), label: Text(l10n.cancelTask)),
             ]),
           ),
         ),

@@ -214,7 +214,21 @@ class _SettingsDetailScreenState extends ConsumerState<SettingsDetailScreen> {
             icon: const Icon(Icons.notifications_active_outlined),
             label: Text(l10n.notificationSettings),
           ),
+          const SizedBox(height: AppSpacing.xs),
+          OutlinedButton.icon(
+            onPressed: () async {
+              try {
+                await ref.read(mineBotPlatformProvider).openBatterySettings();
+              } catch (error) {
+                if (mounted) setState(() { _message = error.toString(); _error = true; });
+              }
+            },
+            icon: const Icon(Icons.battery_saver_outlined),
+            label: Text(l10n.batterySettings),
+          ),
           const SizedBox(height: AppSpacing.sm),
+          Text(l10n.batteryLimitNote, style: AppTypography.label.copyWith(height: 1.45, color: AppColors.amber)),
+          const SizedBox(height: AppSpacing.xs),
           Text(l10n.noFakeData, style: AppTypography.label.copyWith(height: 1.4)),
         ])))),
         SliverPadding(padding: const EdgeInsetsDirectional.fromSTEB(AppSpacing.page, AppSpacing.sm, AppSpacing.page, 0), sliver: SliverToBoxAdapter(child: NeonButton(label: l10n.stopAllBots, icon: Icons.stop_circle_outlined, secondary: true, onPressed: _stopAll))),

@@ -12,7 +12,7 @@ const TOOL_DEFINITIONS = Object.freeze([
         type: 'object',
         additionalProperties: false,
         properties: Object.freeze({
-          block_name: Object.freeze({ type: 'string', pattern: '^[a-z0-9_]{1,64}$', description: 'Exact Minecraft block identifier, for example oak_log.' }),
+          block_name: Object.freeze({ type: 'string', pattern: '^(minecraft:)?[a-z0-9_]{1,64}$', description: 'Minecraft Java block identifier, with or without the minecraft: namespace, for example minecraft:oak_log.' }),
           amount: Object.freeze({ type: 'integer', minimum: 1, maximum: 320, description: 'Number of matching items to collect.' }),
         }),
         required: Object.freeze(['block_name', 'amount']),
@@ -41,7 +41,7 @@ class ToolRegistry {
     if (!args || typeof args !== 'object' || Array.isArray(args)) throw new TypeError('وسائط أداة Minecraft غير صالحة.');
     const keys = Object.keys(args).sort();
     if (keys.length !== 2 || keys[0] !== 'amount' || keys[1] !== 'block_name') throw new TypeError('وسائط collect_block لا تطابق المخطط المسموح.');
-    if (typeof args.block_name !== 'string' || !/^[a-z0-9_]{1,64}$/.test(args.block_name)) throw new TypeError('اسم الكتلة لا يطابق مخطط collect_block.');
+    if (typeof args.block_name !== 'string' || !/^(?:minecraft:)?[a-z0-9_]{1,64}$/.test(args.block_name)) throw new TypeError('اسم الكتلة لا يطابق مخطط collect_block.');
     if (typeof args.amount !== 'number' || !Number.isInteger(args.amount)) throw new TypeError('عدد عناصر collect_block يجب أن يكون عددًا صحيحًا.');
     const normalized = validateCollect(args.block_name, args.amount, 0);
     return { name: 'collect_block', arguments: { block_name: normalized.blockName, amount: normalized.count } };

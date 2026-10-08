@@ -3,12 +3,15 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/data/minecraft_collect_catalog.dart';
 import '../../core/data/providers.dart';
 import '../../core/data/record_helpers.dart';
 import '../../core/theme/app_design_system.dart';
 import '../../core/widgets/async_view.dart';
 import '../../core/widgets/visuals.dart';
+import '../../core/widgets/voxel_item_icon.dart';
 import '../../l10n/generated/app_localizations.dart';
+import 'block_picker_sheet.dart';
 
 class TaskBuilderScreen extends ConsumerStatefulWidget {
   const TaskBuilderScreen({super.key});
@@ -21,10 +24,18 @@ class _TaskBuilderScreenState extends ConsumerState<TaskBuilderScreen> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final TextEditingController _block = TextEditingController();
   final TextEditingController _amount = TextEditingController(text: '1');
+  late final Future<List<MinecraftBlockOption>> _catalog;
+  MinecraftBlockOption? _selectedOption;
   int _step = 0;
   String _category = 'gathering';
   String _botId = '';
   bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _catalog = MinecraftCollectCatalog.load();
+  }
 
   @override
   void dispose() {
@@ -37,6 +48,7 @@ class _TaskBuilderScreenState extends ConsumerState<TaskBuilderScreen> {
   Widget build(BuildContext context) {
     final AppLocalizations l10n = AppLocalizations.of(context);
     final List<JsonMap> bots = ref.watch(recordsProvider('bots')).valueOrNull ?? const <JsonMap>[];
+    final List<JsonMap> servers = ref.watch(recordsProvider('servers')).valueOrNull ?? const <JsonMap>[];
     final List<_Category> categories = <_Category>[
       _Category('gathering', l10n.gathering, Icons.inventory_2_outlined, true),
       _Category('mining', l10n.mining, Icons.construction_rounded, false),
@@ -55,7 +67,9 @@ class _TaskBuilderScreenState extends ConsumerState<TaskBuilderScreen> {
     if (_botId.isEmpty && bots.isNotEmpty) _botId = valueText(bots.first['id']);
     return Scaffold(
       backgroundColor: Colors.transparent,
+      resizeToAvoidBottomInset: true,
       body: CustomScrollView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         physics: const BouncingScrollPhysics(),
         slivers: <Widget>[
           SliverPadding(
@@ -116,9 +130,36 @@ class _TaskBuilderScreenState extends ConsumerState<TaskBuilderScreen> {
                       const SizedBox(height: AppSpacing.xs),
                       Text(l10n.gatherDescription, style: AppTypography.label.copyWith(height: 1.45)),
                       const SizedBox(height: AppSpacing.md),
-                      TextFormField(controller: _block, textCapitalization: TextCapitalization.none, autocorrect: false, maxLength: 64, decoration: InputDecoration(labelText: l10n.selectBlock, hintText: 'oak_log', prefixIcon: const Icon(Icons.widgets_outlined), counterText: ''), validator: (String? value) => RegExp(r'^[a-z0-9_]{1,64}$').hasMatch((value ?? '').trim()) ? null : l10n.invalidBlockName),
+                      Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+                        Expanded(child: TextFormField(
+                          controller: _block,
+                          textCapitalization: TextCapitalization.none,
+                          autocorrect: false,
+                          maxLength: 74,
+                          scrollPadding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom + 48),
+                          onChanged: (String value) { if (_selectedOption != null && value.trim() != _selectedOption!.blockId) setState(() => _selectedOption = null); },
+                          decoration: InputDecoration(labelText: l10n.manualBlockId, hintText: 'minecraft:dirt', prefixIcon: const Icon(Icons.widgets_outlined), counterText: ''),
+                          validator: (String? value) => RegExp(r'^(?:minecraft:)?[a-z0-9_]{1,64}$').hasMatch((value ?? '').trim()) ? null : l10n.invalidBlockName,
+                        )),
+                        const SizedBox(width: AppSpacing.xs),
+                        Padding(padding: const EdgeInsets.only(top: 4), child: IconButton.filledTonal(tooltip: l10n.itemPicker, onPressed: _openBlockPicker, icon: const Icon(Icons.search_rounded))),
+                      ]),
+                      if (_selectedOption != null) ...<Widget>[
+                        const SizedBox(height: AppSpacing.xs),
+                        GlassPanel(accent: AppColors.cyan, padding: const EdgeInsets.all(AppSpacing.sm), child: Row(children: <Widget>[
+                          VoxelItemIcon(itemId: _selectedOption!.outputItemId, size: 38),
+                          const SizedBox(width: AppSpacing.sm),
+                          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+                            Text(_selectedOption!.displayName, style: AppTypography.body.copyWith(fontWeight: FontWeight.w700)),
+                            Text('${l10n.catalogDrop}: ${_selectedOption!.outputDisplayName} · ${_selectedOption!.outputItemId}', style: AppTypography.label.copyWith(color: AppColors.cyan), maxLines: 2, overflow: TextOverflow.ellipsis),
+                          ])),
+                        ])),
+                      ] else ...<Widget>[
+                        const SizedBox(height: AppSpacing.xs),
+                        Text(l10n.catalogNotice, style: AppTypography.micro.copyWith(fontSize: 9, letterSpacing: 0, height: 1.4)),
+                      ],
                       const SizedBox(height: AppSpacing.sm),
-                      TextFormField(controller: _amount, keyboardType: TextInputType.number, inputFormatters: <TextInputFormatter>[FilteringTextInputFormatter.digitsOnly], decoration: InputDecoration(labelText: l10n.quantity, prefixIcon: const Icon(Icons.numbers_rounded), helperText: l10n.quantityRange), validator: (String? value) { final int? amount = int.tryParse(value ?? ''); return amount != null && amount >= 1 && amount <= 320 ? null : l10n.quantityRange; }),
+                      TextFormField(controller: _amount, keyboardType: TextInputType.number, scrollPadding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom + 48), inputFormatters: <TextInputFormatter>[FilteringTextInputFormatter.digitsOnly], decoration: InputDecoration(labelText: l10n.quantity, prefixIcon: const Icon(Icons.numbers_rounded), helperText: l10n.quantityRange), validator: (String? value) { final int? amount = int.tryParse(value ?? ''); return amount != null && amount >= 1 && amount <= 320 ? null : l10n.quantityRange; }),
                       const SizedBox(height: AppSpacing.sm),
                       if (bots.isEmpty) ...<Widget>[
                         EmptyState(title: l10n.noBots, message: l10n.createFirstBot, icon: Icons.smart_toy_outlined, action: NeonButton(label: l10n.addBot, icon: Icons.add_rounded, expanded: false, onPressed: () => context.go('/bots'))),
@@ -132,7 +173,7 @@ class _TaskBuilderScreenState extends ConsumerState<TaskBuilderScreen> {
                       ),
                     ])),
                     const SizedBox(height: AppSpacing.md),
-                    NeonButton(label: l10n.continueLabel, icon: Icons.arrow_forward_rounded, onPressed: bots.isEmpty ? null : () { if (_formKey.currentState!.validate()) setState(() => _step = 2); }),
+                    NeonButton(label: l10n.continueLabel, icon: Icons.arrow_forward_rounded, onPressed: bots.isEmpty ? null : () { if (_formKey.currentState!.validate()) { FocusScope.of(context).unfocus(); setState(() => _step = 2); } }),
                   ]),
                 ),
               ),
@@ -147,8 +188,11 @@ class _TaskBuilderScreenState extends ConsumerState<TaskBuilderScreen> {
                     const SizedBox(height: AppSpacing.md),
                     _ReviewLine(label: l10n.stepCategory, value: l10n.gathering),
                     _ReviewLine(label: l10n.selectBlock, value: _block.text.trim()),
+                    if (_selectedOption != null) _ReviewLine(label: l10n.catalogDrop, value: '${_selectedOption!.outputDisplayName} · ${_selectedOption!.outputItemId}'),
+                    if (_selectedOption == null) Padding(padding: const EdgeInsetsDirectional.only(start: AppSpacing.page, bottom: AppSpacing.xs), child: Text(l10n.catalogNotice, style: AppTypography.micro.copyWith(fontSize: 9, letterSpacing: 0, height: 1.4))),
                     _ReviewLine(label: l10n.quantity, value: _amount.text.trim()),
                     _ReviewLine(label: l10n.assignedBot, value: valueText(bots.where((JsonMap bot) => bot['id'] == _botId).firstOrNull?['name'], fallback: _botId)),
+                    _ReviewLine(label: l10n.server, value: valueText(servers.where((JsonMap server) => server['id'] == bots.where((JsonMap bot) => bot['id'] == _botId).firstOrNull?['serverId']).firstOrNull?['name'], fallback: l10n.notAvailable)),
                     const SizedBox(height: AppSpacing.sm),
                     Text(l10n.taskFeatureBoundary, style: AppTypography.label.copyWith(height: 1.45)),
                     const SizedBox(height: AppSpacing.xs),
@@ -161,16 +205,39 @@ class _TaskBuilderScreenState extends ConsumerState<TaskBuilderScreen> {
                 ]),
               ),
             ),
-          SliverPadding(padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom + 92)),
+          SliverPadding(padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom + MediaQuery.viewInsetsOf(context).bottom + 92)),
         ],
       ),
     );
   }
 
+  Future<void> _openBlockPicker() async {
+    final AppLocalizations l10n = AppLocalizations.of(context);
+    try {
+      final List<MinecraftBlockOption> options = await _catalog;
+      if (!mounted) return;
+      final MinecraftBlockOption? selected = await showModalBottomSheet<MinecraftBlockOption>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (BuildContext context) => BlockPickerSheet(options: options, l10n: l10n),
+      );
+      if (selected != null && mounted) {
+        FocusScope.of(context).unfocus();
+        setState(() {
+          _selectedOption = selected;
+          _block.value = TextEditingValue(text: selected.blockId, selection: TextSelection.collapsed(offset: selected.blockId.length));
+        });
+      }
+    } catch (error) {
+      if (mounted) showFeedback(context, '${l10n.itemPicker}: $error', error: true);
+    }
+  }
+
   Future<void> _save() async {
     final AppLocalizations l10n = AppLocalizations.of(context);
     final int? parsedCount = int.tryParse(_amount.text.trim());
-    final bool valid = RegExp(r'^[a-z0-9_]{1,64}$').hasMatch(_block.text.trim())
+    final bool valid = RegExp(r'^(?:minecraft:)?[a-z0-9_]{1,64}$').hasMatch(_block.text.trim())
         && parsedCount != null && parsedCount >= 1 && parsedCount <= 320
         && _botId.isNotEmpty;
     if (!valid) {

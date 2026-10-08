@@ -1,61 +1,58 @@
-# MineBot AI — Native Android
+# MineBot AI — Flutter/Dart + محرك Minecraft لـ Android
 
-التطبيق الأصلي يستخدم Android Views/Activities وواجهات Android النظامية فقط. لا يحتوي APK على WebView أو صفحة HTML أو واجهة JavaScript. واجهة عربية RTL داكنة ببطاقات بنفسجية/زرقاء، وتُنشئ بياناتها محليًا بدل إظهار Bots أو اتصال أو Telemetry تجريبية.
+تطبيق Flutter أصلي بواجهة Dart؛ يمر الاتصال بميزات النظام عبر Android Method/Event Channels محدودة. لا يوجد WebView أو واجهة HTML. Android يحتضن محرك Node.js/Mineflayer في خدمة محلية، بينما تعرض Flutter البيانات المرصودة من SQLite ومحرك اللعبة. غياب snapshot أو خانة لا يُفسر على أنه حالة متصلة أو مخزون فارغ.
 
-## البنية الحالية
+## المكونات والإصدارات
 
-- **التطبيق:** Java Native Android، `com.minebot.ai`، version `0.1.0` / versionCode `1`، `minSdk 26`، `targetSdk 35`، `compileSdk 35`.
-- **محرك Minecraft:** Node.js Mobile Android `24.20.0-0` عبر JNI، Mineflayer `4.39.0`، `mineflayer-pathfinder 2.4.5`، `mineflayer-auto-eat 5.0.3`، و`mineflayer-collectblock 1.6.0` مع `mineflayer-tool`. يعتمد الاتصال الحقيقي على Minecraft Java protocol عبر Mineflayer.
-- **الإصدارات:** يقبل حقل الاتصال `auto` أو `1.8` حتى `1.21.x` (بصيغة patch حتى رقمين). هذا حدّ التحقق في الواجهة، وليس ضمانًا بأن كل إصدار/Proxy/Plugin يعمل؛ لم تُجرَ بعد مصادقة حيّة على مصفوفة الإصدارات.
-- **التخزين:** SQLite عبر `SQLiteOpenHelper` لجداول servers/bots/tasks/task history/settings/AI config/skins/locations/logs/bot states. المفتاح OpenRouter مشفّر AES-GCM ومفتاح التشفير محفوظ في Android Keystore. ملفات Microsoft auth المؤقتة تبقى داخل app-private cache وتُحذف عند إيقاف المحرك؛ لا تُكتب في المستودع أو السجلات.
-- **الخلفية:** خدمة foreground من نوع `connectedDevice` مع إشعار، `WAKE_LOCK` محدود بست ساعات، وإعادة اتصال بتأخير متزايد. Android/OEM ما يزال قادرًا على قتل الخدمة أو تقييد الشبكة؛ راقب إشعار النظام وسياسات البطارية.
-- **الذكاء الاصطناعي:** اتصال مباشر إلى OpenRouter عبر HTTPS بعد أن يضيف المستخدم مفتاحه. يجلب التطبيق النماذج المجانية، يتيح اختيارها، ويحاول حتى أربعة بدائل إذا فشل النموذج المحدد. مخرجات AI محصورة في اقتراح `collect` واحد أو `unsupported`؛ لا يرسل النموذج tool calls ولا يملك قناة تنفيذ. موافقة المستخدم تحفظ المهمة `pending`، وتشغيلها لاحقًا يمر حصريًا عبر Registry ثابتة لأداة `collect_block`، ثم يتحقق Task Engine من بيانات Minecraft واتصال Spawn والتغير الفعلي في المخزون.
+- **Flutter/Dart:** Flutter `>=3.35.0`، Dart `>=3.6.0`، Riverpod وGoRouter، ترجمات العربية RTL والإنجليزية والفرنسية.
+- **Android:** Java 17، `minSdk 26`، `targetSdk 35`، `compileSdk 36`؛ Native bridge، SQLite، Android Keystore للمفتاح المحلي، خدمة foreground، JNI/CMake.
+- **محرك اللعبة:** Node.js Mobile Android `24.20.0-0` (تُنزّل الحزمة المثبّتة وتُتحقق SHA-256 داخل CI)، Mineflayer `4.39.0`، Pathfinder `2.4.5`، collectblock `1.6.0`، و`minecraft-data 3.117.0`.
+- **المتوافق:** Minecraft Java Edition فقط. خانة الإصدار لا تضمن تشغيل كل خادم أو Proxy/Plugin؛ بيانات Minecraft تُحل بحسب نسخة جلسة البوت الفعلية، وقد يرفض الخادم البروتوكول أو المصادقة.
+- **التخزين:** SQLite للـservers/bots/tasks/task history/settings/AI config/skins/locations/logs/bot states. السجلات القديمة غير المتحققة لا تتحول إلى Bot online. مفتاح OpenRouter مخزن عبر Android Keystore؛ بيانات مصادقة Microsoft المؤقتة في app-private cache، وليست مضمونة بتشفير Keystore أثناء تشغيل Mineflayer.
 
-## الوظائف الموصولة فعليًا
+## واجهة ومزايا متصلة بالبيانات الفعلية
 
-- إضافة وتعديل وحذف سجل سيرفر Java وبوت محلي، واختيار Offline أو تدفق Microsoft device-code (لا تُطلب كلمة مرور Microsoft).
-- Minecraft Server List Status Ping عبر TCP؛ يعرض نسخة/لاعبين/وصفًا عند نجاحه، لكنه **ليس تسجيل دخول**.
-- إنشاء جلسة Mineflayer، أحداث تسجيل الدخول وSpawn والحالة الحقيقية، ومخزون 36 خانة وتجهيز/صحة/طعام/موقع وقياسات عالم مرصودة. `JOINING` بعد Login، و`ONLINE` فقط بعد Spawn حقيقي؛ Server Status Ping وقياس جلسة البوت منفصلان. السجل القديم يظهر غير متحقق.
-- أوامر حركة قصيرة، Chat، إيقاف الحركة، Disconnect، وإعادة الاتصال؛ تُرسل إلى جلسة Mineflayer فقط.
-- مهمة جمع محدودة عبر `mineflayer-collectblock` (Pathfinder + اختيار الأداة الحقيقي): يقبل المحرك حاليًا فقط الكتل التي تُظهر بيانات Minecraft إسقاط عنصر بالاسم نفسه. يحدّث التقدم عند رصد فرق حقيقي بالمخزون، ويحفظ خط الأساس والتقدم، ويتحقق منهما عند إعادة تشغيل المهمة. Pause/Resume/Cancel يطلب إيقاف collectblock ويحتفظ بالمهمة متوقفة إذا لم يتأكد الإلغاء. Behavior Engine يوقف المهمة عند انقطاع الاتصال أو أولوية الطعام/الصحة، ولا يسمح لـResume بتجاوزها.
-- إدارة PNG Skins محليًا والتحقق من الأبعاد `64×64` أو `64×32`. **لا يرفع التطبيق Skin إلى حساب Microsoft أو يغيّر Skin السيرفر.**
-- إشعار خدمة أمامية، سجل أحداث، نسخة احتياطية JSON محلية، وإعدادات AI.
+- Dashboard يفرق بين ping السيرفر عبر Java Status protocol وبين جلسة البوت بعد `Spawn`، ويعرض القياسات فقط من snapshot حديث. `LOGIN` وحده لا يعني أن البوت دخل العالم.
+- Bot Details يعرض الصحة/الطعام/الموقع/البعد/المخزون وحالة الجلسة المرصودة. توجد إشارة صريحة إلى أن Live View المرئية غير متاحة؛ Mineflayer يقدّم بيانات العالم لا فيديو. لا تُنشأ صور أو بث تخيلي.
+- Inventory يعرض فقط slot snapshots التي أرسلها Minecraft: الخانات الرئيسية وhotbar والتجهيزات وعدد/تفاصيل الرزمة؛ إذا لم تتوفر خانات لا يعرض شبكة توحي أن المخزون فارغ. أيقونات العناصر رسومات أصلية مبسطة، وليست خامات Minecraft الرسمية.
+- Skin Manager يقبل ملف PNG محليًا بأبعاد Minecraft المسموحة، ويعرض قصّة وجه الرأس والطبقة الخارجية إن أمكن. هذا معاينة محلية فقط، **ولا يغيّر Skin حساب Minecraft**.
+- Task Builder يوفّر بحثًا وتصنيفات وIDs من كتالوج اقتراحات ثابت لمورّدو البيانات Minecraft `1.21.4`، مع إدخال ID متقدم. القائمة مساعدة وليست ضمان توافق؛ يعيد المحرك التحقق من block/drop وفق إصدار جلسة الخادم الفعلي. تظهر شاشة مراجعة الهدف والكمية والبوت والسيرفر والإسقاط المتوقع.
+- Task Center/Details يعرضان الحالة والمرحلة والإسقاط والكمية المؤكدة والمدة والفعل المرصود والسبب وسجل الأحداث. لا يُخفى `INVENTORY_FULL` أو الفشل خلف نجاح شكلي.
+- الاتصال يدعم Offline للسيرفرات التي تسمح به، أو Microsoft device-code flow؛ لا يطلب التطبيق كلمة مرور Microsoft. Ping السيرفر ليس تسجيل دخول أو دليلًا على أن البوت داخل العالم.
+- أمر جمع واحد موصول حاليًا (`collect_block`): يقبل `dirt` أو `minecraft:dirt` ونظائرها، ويحل الإسقاط من بيانات نسخة الخادم. لا ينفذ الجمع إلا إذا كان للكتلة **إسقاط واحد ثابت مسجل**. مثال: `stone` يُثبت عبر `cobblestone`، و`grass_block` عبر `dirt`. لا تُعرض الإسقاطات العشوائية أو متعددة الاحتمالات كهدف دقيق.
+- يظل التقدم محصورًا في فرق عنصر الإسقاط الفعلي في مخزون Mineflayer؛ تغيير الكتلة أو استجابة Pathfinder أو ظهور كيان item وحده لا يكفي. الإنهاء يعاد التحقق منه في مخزون Minecraft. مهمة `Dirt ×20` في الاختبارات محاكاة بمحرك/Mock، وليست اختبارًا على عالم أو خادم Minecraft فعلي.
+- السلوك يوقف المهمة عند خطر الصحة/الطعام أو انقطاع الاتصال، ويدعم pause/resume/cancel مع انتظار إيقاف Mineflayer. إعادة الاتصال لها backoff متزايد، وتُرفض محاولات إعادة الاتصال مع kicks دائمة تتطلب تدخل المستخدم.
+- خدمة Android الأمامية تبدأ عند تشغيل جلسة، وتعرض إشعارًا مع إجراء Stop all، وطلب إذن الإشعارات وفتح صفحة إعداد البطارية الرسمية متاحان. تُستخدم wake lock محدودة بدل إبقائها بلا حد.
 
-## حدود معروفة — لا تُخفَ
+## حدود التنفيذ الواجب معرفتها
 
-- نجح CI للشفرة عند commit `27df205` في 2026-10-06: شغّل اختبارات Node وAndroid/Robolectric ثم بنى APK debug وrelease مع JNI/CMake (run [37546786133](https://github.com/abiedadam0077/wiin11/actions/runs/37546786133)); نُشرت الملفات في [الإصدار native #13](https://github.com/abiedadam0077/wiin11/releases/tag/minebot-ai-native-build-13). هذا يثبت الاختبارات والبناء، لا تشغيل `libnode` على جهاز حقيقي ولا اتصال Minecraft خارجي أو Microsoft OAuth.
-- لم يُختبر APK بعد على جهاز أو محاكي Android، ولم تُجرَ مصادقة/Join/Spawn حية لخادم Minecraft. اختبارات Mineflayer محاكاة بروتوكول/جلسة؛ واختبار Status Ping يستخدم خادمًا محليًا ولا يساوي تسجيل الدخول.
-- المهام المدعومة حاليًا جمع كتلة ضمن 48 كتلة محمّلة بشرط أن تؤكد بيانات Minecraft إسقاط عنصر بالاسم نفسه. لذلك لا تُعامل خامات مثل `diamond_ore` أو الكتل ذات إسقاط مختلف كمهام مدعومة. التخزين بالصناديق، Crafting، البناء، القتال، وخطط AI متعددة الخطوات غير جاهزة. أدوات الحركة الداخلية لا تُعرض للـAI.
-- تسجيل Microsoft يعتمد SDK/المكتبات التابعة لـMineflayer، ويتطلب خادم Java يسمح بحساب Online؛ Offline لا يعمل إلا على سيرفر يسمح بذلك. لا يوجد دعم Bedrock/SRV أو تسجيل دخول غير رسمي.
-- ملفات auth المؤقتة في دليل التطبيق الخاص، لكنها ليست تشفيرًا مخصصًا بـKeystore أثناء تشغيل Mineflayer. مفتاح OpenRouter وحده يُخزن بتشفير Keystore.
-- لا تتضمن النسخة إعداد توقيع Play Store. نسخة Release في CI تستخدم debug certificate لغرض الاختبار فقط وليست إصدار إنتاج.
+- **لا يوجد Live View حقيقي الآن.** مسار Prismarine Viewer المنشور عارض WebGL يعمل كخادم ويب/واجهة متصفح، وليس surface Flutter أصليًا. بديل أصلي يتطلب تنفيذ رندر عالم 3D وجسر chunks وentities وtextures؛ لم نركّب بثًا أو عارضًا غير مدعوم، ولم نعد توزيع خامات لعبة رسمية.
+- Chest/storage وCrafting والبناء والقتال وأتمتة متعددة الخطوات غير مدعومة حاليًا؛ لا تظهر كأدوات تعمل. مجموعة الـAI لا تملك قناة تنفيذ مباشرة إلى اللعبة.
+- Foreground service وإشعار Android يحسّنان الاستمرار لكنهما لا يضمنانه: سياسات البطارية/OEM، force-stop، فقد الشبكة أو قتل العملية قد تقطع الجلسة. **لا تستأنف الجلسات تلقائيًا بعد إعادة تشغيل الهاتف**؛ راجع إشعار/حالة المحرك وأعد الاتصال يدويًا. إعداد الإعفاء من تحسين البطارية لا يُطلب تلقائيًا.
+- لا يوجد جهاز Android أو خادم Minecraft حي متاح في بيئة التطوير. لذلك لا يوجد إثبات هنا لنجاح دخول Microsoft، أو spawn على خادم خارجي، أو `Dirt ×20` فعلي، أو background/reconnect على جهاز، ولا لتطبيق Skin على حساب. اختبارات المحرك تستخدم mocks محلية.
+- نسخة APK التي ينتجها CI موقّعة بشهادة debug للاختبار، وليست توقيع Play Store. لا يُضاف APK إلى Git؛ انظر صفحة Releases / Actions للملف الذي يطابق commit المبني.
 
-## اختبارات المحرك
+## اختبارات وتشغيل محلي
 
 ```bash
+# من جذر المستودع
 npm ci --prefix mobile/engine
 npm --prefix mobile/engine test
-node --check mobile/engine/main.js
+node --check mobile/engine/task-engine.js
+
+# يتطلب Flutter stable وAndroid SDK وJava 17
+cd mobile
+flutter pub get
+flutter gen-l10n
+dart format lib test
+flutter analyze --no-fatal-infos
+flutter test --reporter expanded --concurrency=1
 ```
 
-اختبارات Node الحالية شغّلت 16/16 بنجاح؛ تغطي إعداد الاتصال وتنقيح الأسرار، LOGIN مقابل Spawn، لقطات المخزون، Registry أدوات مغلقة، منع التقدم دون فرق مخزون، خط أساس استئناف المهام، Pause/Resume/Cancel وإيقاف kick نهائي، أولوية البقاء، وعزل أحداث الجلسات القديمة. جرى أيضًا `node --check` لملفات المحرك و`npm audit` دون ثغرات. لم تُشغّل Android/Robolectric أو Gradle في هذه البيئة الحالية (لا يوجد JDK/Gradle)، كما أن نجاح اختبارات Node لا يثبت تشغيل JNI أو جلسة Minecraft حية. سجلات CI السابقة لستة اختبارات Android تخص إصدارًا أقدم ولا تُعد اختبارًا لهذه التعديلات.
-
-## بناء APK
-
-يحتاج JDK 17 وAndroid SDK Platform/Build Tools 35 وNDK `27.2.12479018` وCMake `3.22.1` وGradle `8.7` (AGP `8.6.1`). يحمّل workflow حزمة Node.js Mobile مثبتة الإصدار، ويتحقق من SHA-256، ثم ينسخ المكتبة للرابط JNI ويبني Native APK.
+بناء واختبار Android يتطلب `NDK 27.2.12479018` وCMake `3.22.1` وAndroid platform 36، إضافةً إلى إعداد `mobile/android/local.properties` بمساري Flutter وAndroid SDK. الـworkflow في `.github/workflows/build-minebot-android.yml` يثبت هذه الاعتماديات، يشغل Flutter وNode وRobolectric tests، ويبني debug وrelease APK.
 
 ```bash
-npm ci --prefix mobile/engine
-cd mobile/android
-gradle :app:testDebugUnitTest
-gradle :app:assembleDebug :app:assembleRelease
+gradle --no-daemon -p mobile/android :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease
 ```
 
-المخرجات المتوقعة:
-
-- `mobile/build/app/outputs/apk/debug/app-debug.apk`
-- `mobile/build/app/outputs/apk/release/app-release.apk` (موقّع بمفتاح debug في CI للاختبار فقط)
-
-Build metadata: application ID `com.minebot.ai`; version `0.1.0` (`versionCode 1`); target/compile SDK `35`; minimum SDK `26`; ABIs `arm64-v8a` و`x86_64`.
-
-APK المطابق للشفرة عند commit `27df205`، من [الإصدار native #13](https://github.com/abiedadam0077/wiin11/releases/tag/minebot-ai-native-build-13): [تنزيل app-release.apk مباشرة](https://github.com/abiedadam0077/wiin11/releases/download/minebot-ai-native-build-13/app-release.apk) (167,448,979 بايت، SHA-256 `3fe1cc1e4cb58fc9c2ca204f9e651edde7bc2adc4550c9697916f5f4bb89d302`). يتوفر أيضًا [app-debug.apk](https://github.com/abiedadam0077/wiin11/releases/download/minebot-ai-native-build-13/app-debug.apk) (177,265,146 بايت، SHA-256 `7345358cf609f4ec55d5cd61c4fd78b47b1e726e2d55f5e06b3c381feec07e52`). نسخة release موقّعة بشهادة debug للاختبار، وليست لتوزيع Play Store. لم يُختبر أي APK على جهاز فعلي أو مع خادم Minecraft حي.
+الاختبارات تختبر منطق المحرك/استجابة Status protocol المحلية/تخزين SQLite والعرض عبر Flutter؛ نجاحها لا يثبت اتصال Minecraft حيًا أو تشغيل Node JNI على هاتف فعلي.

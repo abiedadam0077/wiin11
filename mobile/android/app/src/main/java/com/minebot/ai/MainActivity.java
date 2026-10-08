@@ -12,6 +12,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.Settings;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -264,6 +265,16 @@ public final class MainActivity extends FlutterActivity implements MethodChannel
                     requestNotifications();
                     result.success(null);
                     return;
+                case "openBatterySettings": {
+                    Intent batterySettings = new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
+                    if (batterySettings.resolveActivity(getPackageManager()) == null) {
+                        batterySettings = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName()));
+                    }
+                    if (batterySettings.resolveActivity(getPackageManager()) == null) throw new IllegalStateException("Android does not expose an app or battery settings page.");
+                    startActivity(batterySettings);
+                    result.success(null);
+                    return;
+                }
                 case "openExternalUrl": {
                     String rawUrl = requiredString(call, "url", 2_048);
                     openTrustedExternalUrl(rawUrl);

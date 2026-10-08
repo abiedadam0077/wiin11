@@ -12,6 +12,7 @@
     "test": "node --test tests/*.test.cjs"
   },
   "dependencies": {
+    "minecraft-data": "3.117.0",
     "mineflayer": "4.39.0",
     "mineflayer-auto-eat": "5.0.3",
     "mineflayer-collectblock": "1.6.0",

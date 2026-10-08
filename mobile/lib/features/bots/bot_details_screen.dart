@@ -186,6 +186,7 @@ class _BotDetailsScreenState extends ConsumerState<BotDetailsScreen> {
       ];
     }
     final JsonMap currentTask = asJsonMap(state?['currentTask']);
+    final JsonMap lookTarget = asJsonMap(state?['lookTarget']);
     return <Widget>[
       SliverPadding(
         padding: const EdgeInsetsDirectional.fromSTEB(AppSpacing.page, AppSpacing.md, AppSpacing.page, 0),
@@ -218,6 +219,11 @@ class _BotDetailsScreenState extends ConsumerState<BotDetailsScreen> {
                 if (finiteNumber(state?['saturation']) != null) _InfoPill(label: l10n.saturation, value: finiteNumber(state?['saturation'])!.toStringAsFixed(1)),
                 if (finiteNumber(state?['oxygen']) != null) _InfoPill(label: l10n.oxygen, value: '${state!['oxygen']}'),
               ]),
+              const SizedBox(height: AppSpacing.md),
+              Text(l10n.currentLookTarget, style: AppTypography.micro),
+              Text(lookTarget.isEmpty ? l10n.noLookTarget : '${valueText(lookTarget['name'])} · ${formatPosition(lookTarget['position'])}', style: AppTypography.label.copyWith(color: AppColors.cyan)),
+              const SizedBox(height: AppSpacing.md),
+              Text(l10n.liveViewUnavailable, style: AppTypography.label.copyWith(color: AppColors.amber, height: 1.45)),
               if (currentTask.isNotEmpty) ...<Widget>[
                 const SizedBox(height: AppSpacing.md),
                 Text(l10n.currentTask, style: AppTypography.micro),

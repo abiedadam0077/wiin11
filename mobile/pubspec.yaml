@@ -29,3 +29,4 @@ flutter:
   generate: true
   assets:
     - assets/images/voxel_hero.png
+    - assets/minecraft/collect_targets_1.21.4.json

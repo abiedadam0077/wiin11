@@ -19,6 +19,8 @@ import java.io.DataOutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.concurrent.atomic.AtomicReference;
 
 @RunWith(RobolectricTestRunner.class)
@@ -40,6 +42,48 @@ public final class NativeStorageAndStatusTest {
         database.remove("servers", "server-1");
         assertEquals(0, new JSONArray(database.readAll("servers")).length());
         assertEquals(0, new JSONArray(database.readAll("not-a-table")).length());
+        database.close();
+    }
+
+    @Test public void taskRuntimeStageOutputItemAndInventoryFullPauseArePersisted() throws Exception {
+        DatabaseStore database = new DatabaseStore(context);
+        database.upsert("tasks", new JSONObject().put("id", "task-1").put("botId", "bot-1").put("status", "running").toString());
+        BotEngineService service = new BotEngineService();
+        Field databaseField = BotEngineService.class.getDeclaredField("database");
+        databaseField.setAccessible(true);
+        databaseField.set(service, database);
+
+        Method persistEvent = BotEngineService.class.getDeclaredMethod("persistTaskEvent", String.class, JSONObject.class);
+        persistEvent.setAccessible(true);
+        JSONObject fullEvent = new JSONObject().put("taskId", "task-1").put("status", "INVENTORY_FULL")
+                .put("stage", "INVENTORY_FULL").put("outputItemName", "dirt").put("startedAt", 1000L)
+                .put("durationMs", 9000L).put("priority", "INVENTORY_FULL").put("progress", 40)
+                .put("verifiedCollected", 8).put("reason", "Inventory has no empty slot.");
+        persistEvent.invoke(service, "bot-1", fullEvent);
+        JSONObject paused = new JSONArray(database.readAll("tasks")).getJSONObject(0);
+        assertEquals("paused", paused.getString("status"));
+        assertEquals("INVENTORY_FULL", paused.getString("stage"));
+        assertEquals("dirt", paused.getString("outputItemName"));
+        assertEquals("INVENTORY_FULL", paused.getString("runtimePriority"));
+        assertEquals(40, paused.getInt("progress"));
+        assertEquals(8, paused.getInt("verifiedCollected"));
+        assertEquals(1000L, paused.getLong("startedAt"));
+        assertEquals(9000L, paused.getLong("durationMs"));
+
+        JSONObject runningEvent = new JSONObject().put("taskId", "task-1").put("status", "RUNNING").put("stage", "SEARCHING").put("priority", "CURRENT_TASK");
+        persistEvent.invoke(service, "bot-1", runningEvent);
+        Method persistProgress = BotEngineService.class.getDeclaredMethod("persistTaskProgress", JSONObject.class);
+        persistProgress.setAccessible(true);
+        persistProgress.invoke(service, new JSONObject().put("taskId", "task-1").put("stage", "MOVING")
+                .put("outputItemName", "dirt").put("currentAction", "Pathfinder moved toward target.")
+                .put("durationMs", 12000L).put("position", new JSONObject().put("x", 1).put("y", 64).put("z", 0)));
+        JSONObject moving = new JSONArray(database.readAll("tasks")).getJSONObject(0);
+        assertEquals("running", moving.getString("status"));
+        assertEquals("MOVING", moving.getString("stage"));
+        assertEquals("Pathfinder moved toward target.", moving.getString("currentAction"));
+        assertEquals("dirt", moving.getString("outputItemName"));
+        assertEquals(12000L, moving.getLong("durationMs"));
+        assertEquals(1, moving.getJSONObject("currentTarget").getInt("x"));
         database.close();
     }
 

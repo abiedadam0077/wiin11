@@ -2,9 +2,13 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { Vec3 } = require('vec3');
-const { BotManager } = require('../bot-manager');
+const { BotManager, isPermanentKick } = require('../bot-manager');
+const { resolveExpectedDrop } = require('../task-engine');
+const minecraftData = require('minecraft-data')('1.21.4');
 
 class MockBot extends EventEmitter {
   constructor(collectOverride = null) {
@@ -19,9 +23,10 @@ class MockBot extends EventEmitter {
     this.entity = { id: 7, position: new Vec3(0, 64, 0), yaw: 0, pitch: 0 };
     this.inventoryItems = [];
     this.inventorySlots = new Array(46).fill(null);
+    this.quickBarSlot = 4;
     this.players = {};
     this.entities = {};
-    this.inventory = { items: () => this.inventoryItems, slots: this.inventorySlots };
+    this.inventory = { items: () => this.inventoryItems, slots: this.inventorySlots, emptySlotCount: () => this.inventorySlots.slice(9, 45).filter((item) => item == null).length };
     this.controlStates = {};
     this.collectCalls = 0;
     this.cancelCalls = 0;
@@ -38,7 +43,7 @@ class MockBot extends EventEmitter {
       collect: async (target, options) => {
         this.collectCalls++;
         if (this.collectOverride) return this.collectOverride(this, target, options);
-        return this.collectOne();
+        return this.collectOne(target);
       },
       cancelTask: async () => {
         this.cancelCalls++;
@@ -56,9 +61,15 @@ class MockBot extends EventEmitter {
   findBlocks() { return [this.block.position]; }
   blockAt() { return this.block; }
   canDigBlock() { return true; }
-  async collectOne() {
-    const count = this.inventoryItems.reduce((sum, item) => item.name === 'oak_log' ? sum + item.count : sum, 0) + 1;
-    const item = { name: 'oak_log', displayName: 'Oak Log', count, slot: 9, type: 17 };
+  async collectOne(target = this.block) {
+    const outputName = ({
+      dirt: 'dirt', coarse_dirt: 'coarse_dirt', grass_block: 'dirt', oak_log: 'oak_log',
+      stone: 'cobblestone', coal_ore: 'coal', iron_ore: 'raw_iron', gold_ore: 'raw_gold',
+      diamond_ore: 'diamond', copper_ore: 'raw_copper',
+    })[target?.name] || target?.name || 'oak_log';
+    const count = this.inventoryItems.reduce((sum, item) => item.name === outputName ? sum + item.count : sum, 0) + 1;
+    const metadata = minecraftData.itemsByName[outputName];
+    const item = { name: outputName, displayName: metadata?.displayName || outputName, count, slot: 9, type: metadata?.id || 17 };
     this.inventoryItems = [item];
     this.inventorySlots[9] = item;
   }
@@ -73,10 +84,7 @@ function makeManager({ collect } = {}) {
   const manager = new BotManager({
     mineflayer: { createBot: () => { bot = new MockBot(collect || null); return bot; } },
     pathfinder: { pathfinder() {}, Movements, goals: {} },
-    minecraftData: () => ({
-      blocksByName: { oak_log: { id: 17, drops: [17] }, stone: { id: 1, drops: [35] } },
-      itemsByName: { oak_log: { id: 17 }, stone: { id: 1 } },
-    }),
+    minecraftData: () => minecraftData,
     authCacheDir: null,
     autoEat: null,
     collectBlock: () => {},
@@ -94,6 +102,37 @@ async function spawn(managerHarness) {
   return managerHarness.bot;
 }
 
+function waitForEvent(manager, predicate, timeoutMs = 2_000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      manager.removeListener('event', listener);
+      reject(new Error('Timed out waiting for expected engine event.'));
+    }, timeoutMs);
+    const listener = (event) => {
+      if (!predicate(event)) return;
+      clearTimeout(timer);
+      manager.removeListener('event', listener);
+      resolve(event);
+    };
+    manager.on('event', listener);
+  });
+}
+
+test('picker catalogue suggestions are generated from exactly the engine drop rules', () => {
+  const cataloguePath = path.join(__dirname, '../../assets/minecraft/collect_targets_1.21.4.json');
+  const catalogue = JSON.parse(fs.readFileSync(cataloguePath, 'utf8'));
+  assert.equal(catalogue.catalogueVersion, '1.21.4');
+  assert.ok(catalogue.targets.length > 800);
+  for (const option of catalogue.targets) {
+    const blockName = option.blockName.replace(/^minecraft:/, '');
+    const resolved = resolveExpectedDrop(blockName, minecraftData);
+    assert.equal(resolved.outputItemName, option.outputItemName, `Picker drop mismatch for ${option.blockName}`);
+  }
+  assert.equal(catalogue.targets.find((row) => row.blockName === 'minecraft:stone').outputItemName, 'cobblestone');
+  assert.equal(catalogue.targets.find((row) => row.blockName === 'minecraft:grass_block').outputItemName, 'dirt');
+  assert.equal(catalogue.targets.some((row) => row.blockName === 'minecraft:oak_leaves'), false);
+});
+
 test('ONLINE and world snapshots require a real Spawn event, not only login', async () => {
   const harness = makeManager();
   await harness.manager.connect('bot-1', {
@@ -110,10 +149,12 @@ test('ONLINE and world snapshots require a real Spawn event, not only login', as
   assert.ok(harness.events.some((event) => event.type === 'bot_state' && event.status === 'ONLINE' && event.detail.includes('Spawn')));
   const snapshot = harness.events.findLast((event) => event.type === 'bot_snapshot');
   assert.equal(snapshot.status, 'ONLINE');
+  assert.equal(snapshot.inventoryAvailable, true);
+  assert.equal(snapshot.selectedHotbarSlot, 4);
   assert.deepEqual(snapshot.position, { x: 0, y: 64, z: 0 });
   assert.deepEqual(snapshot.inventory, []);
   assert.equal(snapshot.inventorySlots.length, 36);
-  assert.deepEqual(snapshot.inventorySlots[0], { slot: 9, name: null, displayName: null, count: 0 });
+  assert.deepEqual(snapshot.inventorySlots[0], { slot: 9, name: null, displayName: null, count: 0, type: null, maxStackSize: null });
 
   await harness.manager.command({ action: 'control', botId: 'bot-1', states: { forward: true } });
   assert.equal(harness.bot.controlStates.forward, true);
@@ -130,7 +171,7 @@ test('collect_block is the only registered tool and progress requires an invento
   await assert.rejects(harness.manager.command({ action: 'execute-tool', botId: 'bot-1', toolName: 'collect_block', arguments: { block_name: 'oak_log', amount: 1, extra: true } }), /مخطط/);
   await assert.rejects(harness.manager.command({ action: 'execute-tool', botId: 'bot-1', toolName: 'collect_block', arguments: { block_name: 'oak_log', amount: '1' } }), /عدد عناصر/);
 
-  await harness.manager.command({ action: 'execute-tool', botId: 'bot-1', toolName: 'collect_block', arguments: { block_name: 'oak_log', amount: 1 }, taskId: 'task-42' });
+  await harness.manager.command({ action: 'execute-tool', botId: 'bot-1', toolName: 'collect_block', arguments: { block_name: 'minecraft:oak_log', amount: 1 }, taskId: 'task-42' });
   assert.equal(bot.collectCalls, 1);
   const taskEvents = harness.events.filter((event) => event.type === 'task_state' && event.taskId === 'task-42');
   assert.equal(taskEvents[0].status, 'RUNNING');
@@ -148,10 +189,23 @@ test('collect does not record completion when Mineflayer inventory did not chang
   await spawn(harness);
   await assert.rejects(
     harness.manager.command({ action: 'collect', botId: 'bot-1', blockName: 'oak_log', count: 1, taskId: 'no-drop' }),
-    /مخزون Minecraft لم يتغير/,
+    /لم يزد في المخزون/,
   );
   assert.equal(harness.events.some((event) => event.type === 'task_state' && event.status === 'COMPLETED'), false);
   assert.ok(harness.events.some((event) => event.type === 'task_state' && event.status === 'FAILED' && event.taskId === 'no-drop'));
+});
+
+test('missing player-slot data is reported as unavailable instead of fabricated as empty space', async () => {
+  const harness = makeManager();
+  const bot = await spawn(harness);
+  bot.inventory = { items: () => [] };
+  harness.manager.snapshot('bot-1', harness.manager.bots.get('bot-1'), true);
+  const snapshot = harness.events.findLast((event) => event.type === 'bot_snapshot');
+  assert.equal(snapshot.inventoryAvailable, false);
+  assert.equal(snapshot.inventory, null);
+  assert.equal(snapshot.inventorySlots, null);
+  await assert.rejects(harness.manager.command({ action: 'collect', botId: 'bot-1', blockName: 'dirt', count: 1 }), /تعذر قراءة خانات/);
+  assert.equal(bot.collectCalls, 0);
 });
 
 test('saved task progress resumes only when the current inventory satisfies its baseline', async () => {
@@ -284,12 +338,63 @@ test('stale events from an older connection generation cannot replace the curren
   assert.equal(harness.events.some((event) => event.type === 'chat_received' && event.message === 'late message from old session'), false);
 });
 
-test('unsupported blocks and non-spawn sessions are rejected', async () => {
+test('block targets verify the actual Minecraft drop, including ores and stone', async () => {
   const harness = makeManager();
-  await spawn(harness);
-  await assert.rejects(harness.manager.command({ action: 'collect', botId: 'bot-1', blockName: 'diamond_ore', count: 1 }), /كتلة غير مدعومة/);
-  await assert.rejects(harness.manager.command({ action: 'collect', botId: 'bot-1', blockName: 'stone', count: 1 }), /إسقاط عنصر بالاسم نفسه/);
-  assert.equal(harness.events.some((event) => event.type === 'task_state' && event.status === 'COMPLETED'), false);
+  const bot = await spawn(harness);
+  for (const [blockName, expectedItem] of [['stone', 'cobblestone'], ['coal_ore', 'coal'], ['iron_ore', 'raw_iron'], ['diamond_ore', 'diamond']]) {
+    bot.block = { name: blockName, position: new Vec3(1, 64, 0), boundingBox: 'block' };
+    await harness.manager.command({ action: 'collect', botId: 'bot-1', blockName: `minecraft:${blockName}`, count: 1, taskId: `collect-${blockName}` });
+    assert.equal(bot.inventoryItems[0].name, expectedItem);
+    const completed = harness.events.findLast((event) => event.type === 'task_state' && event.taskId === `collect-${blockName}` && event.status === 'COMPLETED');
+    assert.equal(completed.verifiedCollected, 1);
+    assert.equal(completed.outputItemName, expectedItem);
+  }
+  bot.block = { name: 'oak_leaves', position: new Vec3(1, 64, 0), boundingBox: 'block' };
+  await assert.rejects(harness.manager.command({ action: 'collect', botId: 'bot-1', blockName: 'oak_leaves', count: 1 }), /إسقاطًا ثابتًا/);
+  bot.block = { name: 'unknown_mod_block', position: new Vec3(1, 64, 0), boundingBox: 'block' };
+  await assert.rejects(harness.manager.command({ action: 'collect', botId: 'bot-1', blockName: 'unknown_mod_block', count: 1 }), /غير موجودة/);
+  assert.equal(harness.events.some((event) => event.type === 'task_state' && event.status === 'COMPLETED' && event.taskId === 'collect-oak_leaves'), false);
   harness.manager.bots.get('bot-1').status = 'JOINING';
   assert.throws(() => harness.manager.getActive('bot-1'), /Spawn الحقيقي/);
+});
+
+test('dirt x20 progresses only by the real mocked inventory delta for each block', async () => {
+  const harness = makeManager();
+  const bot = await spawn(harness);
+  bot.block = { name: 'dirt', position: new Vec3(1, 64, 0), boundingBox: 'block' };
+  const result = await harness.manager.command({ action: 'collect', botId: 'bot-1', blockName: 'minecraft:dirt', count: 20, taskId: 'dirt-20' });
+  assert.equal(result.status, 'COMPLETED');
+  assert.equal(result.verifiedCollected, 20);
+  assert.equal(bot.collectCalls, 20);
+  assert.equal(bot.inventoryItems[0].name, 'dirt');
+  assert.equal(bot.inventoryItems[0].count, 20);
+  const progress = harness.events.filter((event) => event.type === 'task_state' && event.taskId === 'dirt-20' && event.status === 'RUNNING');
+  assert.ok(progress.some((event) => event.verifiedCollected === 12));
+  assert.equal(harness.events.findLast((event) => event.type === 'task_state' && event.taskId === 'dirt-20').verifiedCollected, 20);
+});
+
+test('a full inventory pauses collection and can resume only after a real slot opens', async () => {
+  const harness = makeManager();
+  const bot = await spawn(harness);
+  bot.block = { name: 'dirt', position: new Vec3(1, 64, 0), boundingBox: 'block' };
+  for (let slot = 9; slot <= 44; slot++) bot.inventorySlots[slot] = { name: `stone_${slot}`, count: 64, slot };
+  const inventoryFull = waitForEvent(harness.manager, (event) => event.type === 'task_state' && event.taskId === 'inventory-full' && event.status === 'INVENTORY_FULL');
+  const run = harness.manager.command({ action: 'collect', botId: 'bot-1', blockName: 'dirt', count: 1, taskId: 'inventory-full' });
+  await inventoryFull;
+  assert.equal(bot.collectCalls, 0);
+  await assert.rejects(harness.manager.resumeTask('bot-1', 'inventory-full'), /خانة فارغة/);
+  bot.inventorySlots[44] = null;
+  await harness.manager.resumeTask('bot-1', 'inventory-full');
+  const result = await run;
+  assert.equal(result.status, 'COMPLETED');
+  assert.equal(result.verifiedCollected, 1);
+  assert.equal(harness.manager.bots.get('bot-1').task, null);
+});
+
+test('transient disconnects are retryable, while explicit policy/auth kicks need user action', () => {
+  assert.equal(isPermanentKick('You are not whitelisted on this server'), true);
+  assert.equal(isPermanentKick('Outdated client'), true);
+  assert.equal(isPermanentKick('Server is restarting'), false);
+  assert.equal(isPermanentKick('read ECONNRESET'), false);
+  assert.equal(isPermanentKick('socketClosed'), false);
 });

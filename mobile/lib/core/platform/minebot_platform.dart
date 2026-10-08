@@ -125,5 +125,7 @@ class MineBotPlatform {
 
   Future<void> requestNotificationPermission() => _methods.invokeMethod<void>('requestNotificationPermission');
 
+  Future<void> openBatterySettings() => _methods.invokeMethod<void>('openBatterySettings');
+
   Future<void> openExternalUrl(String url) => _methods.invokeMethod<void>('openExternalUrl', <String, Object?>{'url': url});
 }

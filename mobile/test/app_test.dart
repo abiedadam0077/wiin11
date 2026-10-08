@@ -83,14 +83,17 @@ class _FakePlatform extends MineBotPlatform {
   Future<void> requestNotificationPermission() async {}
 
   @override
+  Future<void> openBatterySettings() async {}
+
+  @override
   Future<void> openExternalUrl(String url) async {}
 }
 
-Widget _app({Locale locale = const Locale('en'), String initialLocation = '/dashboard'}) {
-  final _FakePlatform platform = _FakePlatform();
+Widget _app({Locale locale = const Locale('en'), String initialLocation = '/dashboard', _FakePlatform? platform}) {
+  final _FakePlatform activePlatform = platform ?? _FakePlatform();
   return ProviderScope(
     overrides: [
-      mineBotPlatformProvider.overrideWith((Ref ref) => platform),
+      mineBotPlatformProvider.overrideWith((Ref ref) => activePlatform),
       localeProvider.overrideWith((Ref ref) => locale),
       appRouterProvider.overrideWith((Ref ref) {
         final router = createAppRouter(initialLocation: initialLocation);
@@ -180,6 +183,72 @@ void main() {
     expect(find.text('Coming soon'), findsWidgets);
     expect(find.text('Combat'), findsOneWidget);
     expect(find.text('Gathering'), findsOneWidget);
+  });
+
+  testWidgets('block picker searches real 1.21.4 metadata and shows the different stone drop', (WidgetTester tester) async {
+    final _FakePlatform platform = _FakePlatform();
+    platform.tables['bots'] = <JsonMap>[<String, dynamic>{'id': 'bot-1', 'name': 'Miner'}];
+    _setPhoneSize(tester);
+    await tester.pumpWidget(_app(platform: platform, initialLocation: '/tasks/create'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Choose a block'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, 'minecraft:stone');
+    await tester.pumpAndSettle();
+    expect(find.text('Stone'), findsOneWidget);
+    expect(find.text('minecraft:stone'), findsWidgets);
+    await tester.tap(find.text('Stone'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('cobblestone'), findsWidgets);
+  });
+
+  testWidgets('inventory screen refuses to render empty slots when slot data is unavailable', (WidgetTester tester) async {
+    final _FakePlatform platform = _FakePlatform();
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    platform.tables['bots'] = <JsonMap>[<String, dynamic>{'id': 'bot-1', 'name': 'Miner'}];
+    platform.tables['bot_states'] = <JsonMap>[<String, dynamic>{'id': 'bot-1', 'botId': 'bot-1', 'status': 'ONLINE', 'type': 'bot_snapshot', 'observedAt': now, 'inventoryAvailable': false}];
+    _setPhoneSize(tester);
+    await tester.pumpWidget(_app(platform: platform, initialLocation: '/bots/bot-1/inventory'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Bot telemetry arrived, but the engine did not provide inventory slots. An empty grid will not be shown as real inventory.'), findsOneWidget);
+    expect(find.textContaining('/36'), findsNothing);
+    expect(find.byType(GridView), findsNothing);
+  });
+
+  testWidgets('inventory-full task cards show the actual drop and pause reason', (WidgetTester tester) async {
+    final _FakePlatform platform = _FakePlatform();
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    platform.tables['bots'] = <JsonMap>[
+      <String, dynamic>{'id': 'bot-1', 'name': 'Miner', 'serverId': 'server-1'},
+    ];
+    platform.tables['servers'] = <JsonMap>[
+      <String, dynamic>{'id': 'server-1', 'name': 'Test server'},
+    ];
+    platform.tables['bot_states'] = <JsonMap>[
+      <String, dynamic>{'id': 'bot-1', 'botId': 'bot-1', 'status': 'ONLINE', 'type': 'bot_snapshot', 'observedAt': now},
+    ];
+    platform.tables['tasks'] = <JsonMap>[
+      <String, dynamic>{
+        'id': 'task-1', 'name': 'Collect dirt', 'type': 'collect', 'blockName': 'minecraft:grass_block',
+        'outputItemName': 'dirt', 'count': 20, 'verifiedCollected': 8, 'progress': 40,
+        'botId': 'bot-1', 'status': 'paused', 'stage': 'INVENTORY_FULL', 'runtimePriority': 'INVENTORY_FULL',
+        'durationMs': 9500, 'currentAction': 'Free a slot, then resume.', 'lastReason': 'Minecraft inventory has no empty slot.',
+        'updatedAt': now,
+      },
+    ];
+    _setPhoneSize(tester);
+    await tester.pumpWidget(_app(platform: platform, initialLocation: '/tasks'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Inventory full'), findsOneWidget);
+    expect(find.textContaining('8/20'), findsOneWidget);
+    expect(find.textContaining('dirt'), findsWidgets);
+    expect(find.text('Minecraft inventory has no empty slot.'), findsOneWidget);
+    expect(find.textContaining('9s'), findsOneWidget);
   });
 
   testWidgets('AI planner explains approval boundary without creating a task', (WidgetTester tester) async {

@@ -429,11 +429,19 @@ public final class BotEngineService extends Service {
             JSONObject task = findById(database.readAll("tasks"), taskId);
             if (task != null) {
                 String status = event.optString("status", "");
-                if (!status.isEmpty()) task.put("status", status.toLowerCase(java.util.Locale.ROOT));
+                if (!status.isEmpty()) {
+                    // Keep inventory-full work resumable in existing task filters while preserving the real runtime stage.
+                    String storedStatus = status.equalsIgnoreCase("INVENTORY_FULL") ? "paused" : status.toLowerCase(java.util.Locale.ROOT);
+                    task.put("status", storedStatus);
+                }
+                if (event.has("stage")) task.put("stage", event.optString("stage"));
                 if (event.has("progress")) task.put("progress", event.optInt("progress"));
                 if (event.has("verifiedCollected")) task.put("verifiedCollected", event.optInt("verifiedCollected"));
                 if (event.has("verifiedBy")) task.put("verifiedBy", event.optString("verifiedBy"));
                 if (event.has("initialInventoryCount")) task.put("initialInventoryCount", event.optInt("initialInventoryCount"));
+                if (event.has("outputItemName")) task.put("outputItemName", event.optString("outputItemName"));
+                if (event.has("startedAt")) task.put("startedAt", event.optLong("startedAt"));
+                if (event.has("durationMs")) task.put("durationMs", event.optLong("durationMs"));
                 if (event.has("currentAction")) task.put("currentAction", safe(event.optString("currentAction")));
                 if (event.has("blockName")) task.put("blockName", event.optString("blockName"));
                 if (event.has("count")) task.put("count", event.optInt("count"));
@@ -454,8 +462,14 @@ public final class BotEngineService extends Service {
         try {
             JSONObject task = findById(database.readAll("tasks"), taskId);
             if (task == null || !task.optString("status", "").equals("running")) return;
+            if (event.has("stage")) task.put("stage", event.optString("stage"));
             if (event.has("currentAction")) task.put("currentAction", safe(event.optString("currentAction")));
             if (event.has("blockName")) task.put("blockName", event.optString("blockName"));
+            if (event.has("outputItemName")) task.put("outputItemName", event.optString("outputItemName"));
+            if (event.has("progress")) task.put("progress", event.optInt("progress"));
+            if (event.has("verifiedCollected")) task.put("verifiedCollected", event.optInt("verifiedCollected"));
+            if (event.has("startedAt")) task.put("startedAt", event.optLong("startedAt"));
+            if (event.has("durationMs")) task.put("durationMs", event.optLong("durationMs"));
             if (event.has("position")) task.put("currentTarget", event.optJSONObject("position"));
             task.put("updatedAt", event.optLong("observedAt", event.optLong("at", System.currentTimeMillis())));
             database.upsert("tasks", task.toString());
@@ -578,12 +592,15 @@ public final class BotEngineService extends Service {
     private Notification buildNotification(String title, String text) {
         Intent openApp = new Intent(this, MainActivity.class);
         PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, openApp, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        Intent stop = new Intent(this, BotEngineService.class).setAction(ACTION_STOP_ALL);
+        PendingIntent stopIntent = PendingIntent.getService(this, 2, stop, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         return new Notification.Builder(this, CHANNEL)
                 .setSmallIcon(R.drawable.ic_minebot)
                 .setContentTitle(title)
                 .setContentText(text)
                 .setStyle(new Notification.BigTextStyle().bigText(text))
                 .setContentIntent(pendingIntent)
+                .addAction(new Notification.Action.Builder(android.R.drawable.ic_media_pause, "إيقاف جميع الجلسات", stopIntent).build())
                 .setOngoing(true)
                 .setCategory(Notification.CATEGORY_SERVICE)
                 .build();

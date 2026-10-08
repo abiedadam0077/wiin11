@@ -41,7 +41,7 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
       return switch (_filter) {
         'running' => status == 'running',
         'queued' => <String>{'pending', 'interrupted'}.contains(status),
-        'paused' => status == 'paused',
+        'paused' => <String>{'paused', 'inventory_full'}.contains(status),
         'completed' => status == 'completed',
         'failed' => <String>{'failed', 'cancelled'}.contains(status),
         _ => true,
@@ -211,14 +211,18 @@ class TaskCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final AppLocalizations l10n = AppLocalizations.of(context);
     final String status = valueText(task['status'], fallback: 'pending').toLowerCase();
-    final ({String label, Color color, bool pulse}) badge = taskPresentation(l10n, status);
+    final bool inventoryFull = valueText(task['stage']).toUpperCase() == 'INVENTORY_FULL';
+    final ({String label, Color color, bool pulse}) badge = inventoryFull
+        ? (label: l10n.stageInventoryFull, color: AppColors.amber, pulse: false)
+        : taskPresentation(l10n, status);
     final int progress = (finiteInt(task['progress']) ?? 0).clamp(0, 100).toInt();
     final int verified = finiteInt(task['verifiedCollected']) ?? 0;
     final int count = finiteInt(task['count']) ?? 0;
     final bool startable = <String>{'pending', 'failed', 'interrupted'}.contains(status);
     final bool running = status == 'running';
-    final bool pausedByUser = status == 'paused' && valueText(task['runtimePriority']) == 'USER_PAUSE';
-    final bool cancelable = running || status == 'paused';
+    final bool pausedByUser = <String>{'paused', 'inventory_full'}.contains(status)
+        && <String>{'USER_PAUSE', 'INVENTORY_FULL'}.contains(valueText(task['runtimePriority']));
+    final bool cancelable = running || <String>{'paused', 'inventory_full'}.contains(status);
     return GlassPanel(
       accent: badge.color,
       onTap: onOpen,
@@ -233,10 +237,16 @@ class TaskCard extends StatelessWidget {
         if (valueText(task['blockName']).isNotEmpty) ...<Widget>[
           const SizedBox(height: AppSpacing.xs),
           Text('${task['blockName']} · $verified/$count ${l10n.confirmedItems}', style: AppTypography.body.copyWith(fontSize: 12, color: AppColors.text)),
+          if (valueText(task['outputItemName']).isNotEmpty) Text('${l10n.outputItem}: ${task['outputItemName']}', style: AppTypography.label.copyWith(color: AppColors.cyan)),
           const SizedBox(height: AppSpacing.xs),
           ClipRRect(borderRadius: BorderRadius.circular(AppRadius.pill), child: LinearProgressIndicator(value: progress / 100, minHeight: 5, color: badge.color, backgroundColor: AppColors.surfaceRaised)),
         ],
-        if (<String>{'failed', 'interrupted'}.contains(status) && valueText(task['lastReason']).isNotEmpty) ...<Widget>[
+        if (running || <String>{'paused', 'inventory_full'}.contains(status)) ...<Widget>[
+          const SizedBox(height: AppSpacing.xs),
+          Text('${taskStageLabel(l10n, task['stage'])} · ${l10n.taskDuration}: ${formatDuration(task['durationMs'])}', style: AppTypography.label.copyWith(color: badge.color)),
+          if (valueText(task['currentAction']).isNotEmpty) Text(valueText(task['currentAction']), style: AppTypography.label.copyWith(color: AppColors.textMuted), maxLines: 2, overflow: TextOverflow.ellipsis),
+        ],
+        if ((<String>{'failed', 'interrupted', 'paused', 'inventory_full'}.contains(status) || inventoryFull) && valueText(task['lastReason']).isNotEmpty) ...<Widget>[
           const SizedBox(height: AppSpacing.xs),
           Text(valueText(task['lastReason']), style: AppTypography.label.copyWith(color: AppColors.amber), maxLines: 3, overflow: TextOverflow.ellipsis),
         ],
@@ -259,13 +269,31 @@ class TaskCard extends StatelessWidget {
     case 'running': return (label: l10n.tabActive, color: AppColors.blue, pulse: true);
     case 'pending': return (label: l10n.tabQueued, color: AppColors.purple, pulse: false);
     case 'interrupted': return (label: l10n.interrupted, color: AppColors.amber, pulse: false);
-    case 'paused': return (label: l10n.tabWaiting, color: AppColors.amber, pulse: false);
+    case 'paused':
+    case 'inventory_full': return (label: l10n.tabWaiting, color: AppColors.amber, pulse: false);
     case 'completed': return (label: l10n.tabCompleted, color: AppColors.green, pulse: false);
     case 'cancelled': return (label: l10n.cancelled, color: AppColors.textMuted, pulse: false);
     case 'failed': return (label: l10n.tabFailed, color: AppColors.red, pulse: false);
     default: return (label: l10n.statusUnknown, color: AppColors.textMuted, pulse: false);
   }
 }
+
+String taskStageLabel(AppLocalizations l10n, Object? rawStage) => switch (valueText(rawStage).toUpperCase()) {
+      'IN_WORLD' => l10n.stageInWorld,
+      'SEARCHING' => l10n.stageSearching,
+      'TARGET_FOUND' => l10n.stageTargetFound,
+      'MOVING' => l10n.stageMoving,
+      'BREAKING' => l10n.stageBreaking,
+      'COLLECTING' => l10n.stageCollecting,
+      'VERIFYING_INVENTORY' => l10n.stageVerifyingInventory,
+      'PATH_BLOCKED' => l10n.stagePathBlocked,
+      'INVENTORY_FULL' => l10n.stageInventoryFull,
+      'PAUSED' => l10n.stagePaused,
+      'COMPLETED' => l10n.stageCompleted,
+      'FAILED' => l10n.stageFailed,
+      'CANCELLED' => l10n.stageCancelled,
+      _ => l10n.statusUnknown,
+    };
 
 class _TaskFilter {
   const _TaskFilter(this.key, this.label);
